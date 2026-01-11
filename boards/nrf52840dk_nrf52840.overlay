@@ -1,0 +1,40 @@
+/ {
+    aliases {
+        max30101 = &max30101;
+    };
+};
+
+&pinctrl {
+    i2c1_default: i2c1_default {
+        group1 {
+            /* Using standard DK I2C pins: P0.26 (SDA) and P0.27 (SCL) */
+            psels = <NRF_PSEL(TWIM_SDA, 0, 30)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 31)>;
+            bias-pull-up; /* Essential for 1.8V logic if external resistors are missing */
+        };
+    };
+
+    i2c1_sleep: i2c1_sleep {
+        group1 {
+            psels = <NRF_PSEL(TWIM_SDA, 0, 30)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 31)>;
+            low-power-enable;
+        };
+    };
+};
+
+&i2c1 {
+    compatible = "nordic,nrf-twim"; /* Updated to 'twim' for EasyDMA support */
+    status = "okay";
+    pinctrl-0 = <&i2c1_default>;
+    pinctrl-1 = <&i2c1_sleep>;
+    pinctrl-names = "default", "sleep";
+    clock-frequency = <100000>; /* Standard 100kHz */
+
+    max30101: max30101@57 {
+        compatible = "maxim,max30101";
+        reg = <0x57>;
+
+        /* Interrupt pin is disconnected in your setup, so it is omitted here */
+    };
+};
