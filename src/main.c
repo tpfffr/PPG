@@ -1,10 +1,3 @@
-/*
- * Copyright (c) 2017, NXP
- * Copyright (c) 2025, CATIE
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/sensor.h>
 #include <stdio.h>
@@ -14,6 +7,7 @@
 #include "ble.h"
 #include <zephyr/random/random.h>
 
+#define TPS_EN_PIN 31
 
 struct __packed sensor_packet {
 	uint64_t timestamp;
@@ -40,6 +34,29 @@ static void print_sample_fetch(const struct device *dev, int32_t *green_out, int
 int main(void)
 {
     ble_init();
+
+    const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+    if (!device_is_ready(gpio_dev)) {
+        printk("GPIO device not ready!\n");
+        return -1;
+    }
+
+    int ret = gpio_pin_configure(gpio_dev, TPS_EN_PIN, GPIO_OUTPUT_HIGH | GPIO_INPUT);
+
+    if (ret < 0) {
+        printk("Error configuring GPIO\n");
+        return -1;
+    }
+
+    gpio_pin_set(gpio_dev, TPS_EN_PIN, 1);
+
+    int val = gpio_pin_get(gpio_dev, TPS_EN_PIN);
+
+    if (val > 0) {
+        printk("Software confirms P0.31 is HIGH (1.8V)\n");
+    } else {
+        printk("Software confirms P0.31 is LOW (0V)\n");
+    }
 
     const struct device *const dev = DEVICE_DT_GET(DT_ALIAS(max30101));
 
