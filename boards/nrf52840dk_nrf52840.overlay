@@ -29,12 +29,10 @@
     pinctrl-0 = <&i2c1_default>;
     pinctrl-1 = <&i2c1_sleep>;
     pinctrl-names = "default", "sleep";
-    clock-frequency = <100000>; /* Standard 100kHz */
+    clock-frequency = <400000>; /* Standard 100kHz */
 
     max30101: max30101@57 {
         compatible = "maxim,max30101";
         reg = <0x57>;
-
-        /* Interrupt pin is disconnected in your setup, so it is omitted here */
     };
 };

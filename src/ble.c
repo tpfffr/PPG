@@ -19,13 +19,13 @@ static struct bt_uuid_128 nus_rx  = BT_UUID_INIT_128(NUS_RX_UUID);
 static struct bt_conn *current_conn;
 static bool notify_enabled;
 
-
 static void ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
 	ARG_UNUSED(attr);
 	notify_enabled = (value == BT_GATT_CCC_NOTIFY);
 	printk("CCCD changed: notify %s\n", notify_enabled ? "ENABLED" : "DISABLED");
 }
+
 
 
 BT_GATT_SERVICE_DEFINE(my_service,
@@ -153,7 +153,6 @@ int ble_send_sensor_data(const void *data, uint16_t len) {
 		return bt_gatt_notify(current_conn, &my_service.attrs[1], data, len);
 	}
 }
-
 
 bool ble_is_ready(void) {
     return (current_conn != NULL && notify_enabled);

@@ -3,5 +3,22 @@
         {
             "path": "."
         }
-    ]
+    ],
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "type": "nrf-connect",
+                "request": "launch",
+                "name": "Launch PPG/build",
+                "config": "${workspaceFolder}/build",
+                "runToEntryPoint": "main"
+            }
+        ]
+    },
+    "settings": {
+        "nrf-connect.debugging.bindings": {
+            "${workspaceFolder}/build": "Launch PPG/build"
+        }
+    }
 }
