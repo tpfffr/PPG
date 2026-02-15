@@ -42,7 +42,7 @@ void max30101_enter_sleep(void) {
                                      MAX30101_MODE_CFG_SHDN_MASK,
                                      MAX30101_MODE_CFG_SHDN_MASK);
     if (ret == 0) {
-        printk("CMD: Sensor entered Sleep Mode (0.7uA)\n");
+        printk("CMD: Sensor entered Sleep Mode\n");
     } else {
         printk("ERR: Failed to sleep sensor (%d)\n", ret);
     }
@@ -66,13 +66,12 @@ void sensor_data_ready(const struct device *dev, const struct sensor_trigger *tr
     int32_t val;
     uint32_t now = k_ticks_to_us_near32(k_uptime_ticks());
 
-    /* The hardware told us 10 samples are ready. Let's grab them. */
     for (int i = 0; i < 10; i++) {
-        /* We still call this 10 times because the driver fetch handles one FIFO level */
+
         sensor_sample_fetch(dev);
         sensor_channel_get(dev, MAX30101_SENSOR_CHANNEL, (struct sensor_value *)&val);
 
-        burst_buffer[i].timestamp = now; // Back-calculate 10ms steps
+        burst_buffer[i].timestamp = now;
         burst_buffer[i].ecg = val;
         // burst_buffer[i].resp = 0;
     }
@@ -88,8 +87,6 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err)
 {
     if (err) return;
 
-    printk(">>> CONNECTED: Waking Sensor...\n");
-
     gpio_pin_set(gpio_dev, TPS_EN_PIN, 1);
     max30101_exit_sleep();
 
@@ -98,15 +95,12 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err)
 
 void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
 {
-    printk("<<< DISCONNECTED: Sleeping Sensor...\n");
-
     is_connected = false;
     max30101_enter_sleep();
 
     gpio_pin_set(gpio_dev, TPS_EN_PIN, 0);
 }
 
-/* Define the callback structure */
 struct bt_conn_cb connection_callbacks = {
     .connected = on_ble_connect,
     .disconnected = on_ble_disconnect,
@@ -136,7 +130,6 @@ int main(void)
     sensor_trigger_set(dev, &trig_drdy, sensor_data_ready);
 
     max30101_enter_sleep();
-
 
     while (1) {
         k_sleep(K_FOREVER);
