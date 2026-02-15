@@ -135,8 +135,8 @@ int ble_init(void)
 	/* Create connectable extended advertiser */
 	struct bt_le_adv_param adv_param = BT_LE_ADV_PARAM_INIT(
 		BT_LE_ADV_OPT_CONN,
-		BT_GAP_ADV_FAST_INT_MIN_2,
-		BT_GAP_ADV_FAST_INT_MAX_2,
+		BT_GAP_ADV_SLOW_INT_MIN,
+		BT_GAP_ADV_SLOW_INT_MAX,
 		NULL
 	);
 

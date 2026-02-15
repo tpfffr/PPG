@@ -7,11 +7,14 @@
 #include <hal/nrf_saadc.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
+#include <zephyr/drivers/i2c.h> /* Required for I2C access */
 
 #include "ble.h"
 
 #define TPS_EN_PIN 31
 #define MAX30101_SENSOR_CHANNEL SENSOR_CHAN_GREEN
+#define MAX30101_REG_MODE_CFG       0x09
+#define MAX30101_MODE_CFG_SHDN_MASK 0x80
 
 struct __packed sensor_packet {
 	uint64_t timestamp;
@@ -20,23 +23,43 @@ struct __packed sensor_packet {
 };
 
 const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+const struct device *dev;
 
+static const struct i2c_dt_spec sensor_i2c = I2C_DT_SPEC_GET(DT_ALIAS(max30101));
 
-static void print_sample_fetch(const struct device *dev, int32_t *green_out)
-{
-	static struct sensor_value green;
-
-	sensor_sample_fetch(dev);
-	sensor_channel_get(dev, MAX30101_SENSOR_CHANNEL, &green);
-
-	/* Print LED data*/
-	printf("GREEN = %d\n", green.val1);
-	*green_out = green.val1;
-}
+static bool is_connected = false;
 
 #if CONFIG_MAX30101_TRIGGER
 static struct sensor_trigger trig_drdy;
 
+void max30101_enter_sleep(void) {
+    if (!device_is_ready(sensor_i2c.bus)) {
+        printk("ERR: I2C bus not ready\n");
+        return;
+    }
+
+    int ret = i2c_reg_update_byte_dt(&sensor_i2c, MAX30101_REG_MODE_CFG,
+                                     MAX30101_MODE_CFG_SHDN_MASK,
+                                     MAX30101_MODE_CFG_SHDN_MASK);
+    if (ret == 0) {
+        printk("CMD: Sensor entered Sleep Mode (0.7uA)\n");
+    } else {
+        printk("ERR: Failed to sleep sensor (%d)\n", ret);
+    }
+}
+
+void max30101_exit_sleep(void) {
+    if (!device_is_ready(sensor_i2c.bus)) return;
+
+    int ret = i2c_reg_update_byte_dt(&sensor_i2c, MAX30101_REG_MODE_CFG,
+                                     MAX30101_MODE_CFG_SHDN_MASK,
+                                     0);
+    if (ret == 0) {
+        printk("CMD: Sensor woke up\n");
+    } else {
+        printk("ERR: Failed to wake sensor (%d)\n", ret);
+    }
+}
 void sensor_data_ready(const struct device *dev, const struct sensor_trigger *trigger)
 {
     struct sensor_packet burst_buffer[10];
@@ -64,20 +87,22 @@ void sensor_data_ready(const struct device *dev, const struct sensor_trigger *tr
 void on_ble_connect(struct bt_conn *conn, uint8_t err)
 {
     if (err) return;
-    printk("Device Connected! Powering ON sensor...\n");
 
-    /* Turn ON the TPS62746 voltage regulator */
+    printk(">>> CONNECTED: Waking Sensor...\n");
+
     gpio_pin_set(gpio_dev, TPS_EN_PIN, 1);
+    max30101_exit_sleep();
 
-    /* Give the sensor a moment to wake up */
-    k_msleep(50);
+    is_connected = true;
 }
 
 void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
 {
-    printk("Device Disconnected. Powering OFF sensor...\n");
+    printk("<<< DISCONNECTED: Sleeping Sensor...\n");
 
-    /* Turn OFF the TPS62746 voltage regulator */
+    is_connected = false;
+    max30101_enter_sleep();
+
     gpio_pin_set(gpio_dev, TPS_EN_PIN, 0);
 }
 
@@ -90,46 +115,31 @@ struct bt_conn_cb connection_callbacks = {
 int main(void)
 {
 
-
-    /* 2. Power on the sensor and set up nRF52 "Ears" (GPIO) */
-    gpio_pin_configure(gpio_dev, TPS_EN_PIN, GPIO_OUTPUT_HIGH);
-    gpio_pin_set(gpio_dev, TPS_EN_PIN, 0); // Start with sensor powered off
-
-    k_msleep(200); // Wait for the sensor to power up
+    gpio_pin_configure(gpio_dev, TPS_EN_PIN, GPIO_OUTPUT_LOW);
+    k_msleep(100);
 
     bt_conn_cb_register(&connection_callbacks);
+    k_msleep(100);
 
     ble_init();
+    k_msleep(100);
 
-    const struct device *const dev = DEVICE_DT_GET(DT_ALIAS(max30101));
+    dev = DEVICE_DT_GET(DT_ALIAS(max30101));
 
     if (!device_is_ready(dev)) {
         printk("MAX30101 not ready\n");
         return -1;
     }
 
-    struct sensor_value dummy;
-    sensor_sample_fetch(dev);
-    sensor_channel_get(dev, SENSOR_CHAN_GREEN, &dummy);
+    trig_drdy.type = SENSOR_TRIG_FIFO_WATERMARK;
+    trig_drdy.chan = MAX30101_SENSOR_CHANNEL;
+    sensor_trigger_set(dev, &trig_drdy, sensor_data_ready);
 
-    #if CONFIG_MAX30101_TRIGGER
-        printk("Setting up data ready trigger...\n");
-        // trig_drdy.type = SENSOR_TRIG_DATA_READY;
-        trig_drdy.type = SENSOR_TRIG_FIFO_WATERMARK;
-        trig_drdy.chan = MAX30101_SENSOR_CHANNEL;
-        sensor_trigger_set(dev, &trig_drdy, sensor_data_ready);
-    #endif /* CONFIG_MAX30101_TRIGGER */
+    max30101_enter_sleep();
 
-    int32_t green_value;
 
     while (1) {
-        #if !CONFIG_MAX30101_TRIGGER
-            printk("Polling for new sensor data...\n");
-            print_sample_fetch(dev, &green_value);
-        #endif /* !CONFIG_MAX30101_TRIGGER */
-
         k_sleep(K_FOREVER);
-
-        }
+    }
     return 0;
 }
