@@ -4,6 +4,7 @@
     };
 };
 
+
 &pinctrl {
     i2c1_default: i2c1_default {
         group1 {
@@ -43,11 +44,11 @@
 
         acq-mode = "multi-led";
         adc-rge = <1>;
-        smp-sr = <4>;
-        led-pw = <3>;
+        smp-sr = <6>;
+        led-pw = <2>;
 
-        smp-ave = <3>;
+        smp-ave = <4>;
         fifo-rollover-en;
-        fifo-watermark = <1>;
+        fifo-watermark = <10>;
     };
 };

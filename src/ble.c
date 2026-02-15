@@ -61,21 +61,40 @@ static void start_connectable_advertiser(struct k_work *work)
 	}
 }
 
+static void exchange_func(struct bt_conn *conn, uint8_t err,
+			  struct bt_gatt_exchange_params *params)
+{
+	if (!err) {
+		printk("MTU exchange successful! Current MTU: %d\n",
+                        bt_gatt_get_mtu(conn));
+	} else {
+		printk("MTU exchange failed (err %d)\n", err);
+	}
+}
+
+static struct bt_gatt_exchange_params exchange_params = {
+	.func = exchange_func
+};
+
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	if (err) {
-		printk("Connection failed (0x%02x)\n", err);
-		return;
-	}
+    if (err) {
+        printk("Connection failed (0x02x)\n", err);
+        return;
+    }
 
-	printk("Connected to client!\n");
+    printk("Connected to client!\n");
+    current_conn = bt_conn_ref(conn);
 
-	if (current_conn) {
-		bt_conn_unref(current_conn);
-		current_conn = NULL;
-	}
+    /* 1. Print the starting MTU (typically 23) */
+    printk("Initial MTU: %d\n", bt_gatt_get_mtu(conn));
 
-	current_conn = bt_conn_ref(conn);
+    /* 2. Start the exchange to expand the 'pipe' to 247 */
+    /* This uses the exchange_params variable you already defined */
+    int mtu_err = bt_gatt_exchange_mtu(conn, &exchange_params);
+    if (mtu_err) {
+        printk("MTU exchange failed to start (err %d)\n", mtu_err);
+    }
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -90,6 +109,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	notify_enabled = false;
 	k_work_submit(&singleton_adv.work);
 }
+
+
 
 static struct bt_conn_cb conn_callbacks = {
 	.connected = connected,
