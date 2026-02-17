@@ -13,6 +13,7 @@
 #include "ble.h"
 
 #define TPS_EN_PIN 31
+#define CTRL_PIN 24
 #define MAX30101_SENSOR_CHANNEL SENSOR_CHAN_GREEN
 #define MAX30101_REG_MODE_CFG       0x09
 #define MAX30101_MODE_CFG_SHDN_MASK 0x80
@@ -85,6 +86,10 @@ void sensor_data_ready(const struct device *dev, const struct sensor_trigger *tr
         printk("ADC value: %d\n", buf);
     }
 
+    int32_t val_mv = buf;
+    adc_raw_to_millivolts_dt(&adc_channel, &val_mv);
+    int32_t batt_mv = (val_mv * 1050) / 300;
+
     for (int i = 0; i < 10; i++) {
 
         sensor_sample_fetch(dev);
@@ -92,7 +97,7 @@ void sensor_data_ready(const struct device *dev, const struct sensor_trigger *tr
 
         burst_buffer[i].timestamp = now;
         burst_buffer[i].ecg = val;
-        burst_buffer[i].resp = buf;
+        burst_buffer[i].resp = batt_mv;
     }
 
     if (ble_is_ready()) {
@@ -129,6 +134,14 @@ struct bt_conn_cb connection_callbacks = {
 
 int main(void)
 {
+
+    const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
+
+    if (device_is_ready(gpio0_dev)) {
+        gpio_pin_configure(gpio0_dev, CTRL_PIN, GPIO_OUTPUT_HIGH);
+        k_msleep(100);
+    }
+
     if (!adc_is_ready_dt(&adc_channel)) {
 	    printk("ADC device not ready\n");
         return 0;
