@@ -4,10 +4,11 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/devicetree.h>
-#include <hal/nrf_saadc.h>
+// #include <hal/nrf_saadc.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/drivers/i2c.h> /* Required for I2C access */
+#include <zephyr/drivers/adc.h>
 
 #include "ble.h"
 
@@ -22,10 +23,20 @@ struct __packed sensor_packet {
 	int32_t  resp;
 };
 
+int32_t err;
+
+int16_t buf;
+struct adc_sequence sequence = {
+    .buffer = &buf,
+    .buffer_size = sizeof(buf),
+};
+
+
 const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
 const struct device *dev;
 
 static const struct i2c_dt_spec sensor_i2c = I2C_DT_SPEC_GET(DT_ALIAS(max30101));
+static const struct adc_dt_spec adc_channel = ADC_DT_SPEC_GET(DT_PATH(zephyr_user));
 
 static bool is_connected = false;
 
@@ -66,6 +77,14 @@ void sensor_data_ready(const struct device *dev, const struct sensor_trigger *tr
     int32_t val;
     uint32_t now = k_ticks_to_us_near32(k_uptime_ticks());
 
+    err = adc_read(adc_channel.dev, &sequence);
+    if (err < 0) {
+        printk("ADC read error: %d\n", err);
+    }
+    else {
+        printk("ADC value: %d\n", buf);
+    }
+
     for (int i = 0; i < 10; i++) {
 
         sensor_sample_fetch(dev);
@@ -73,7 +92,7 @@ void sensor_data_ready(const struct device *dev, const struct sensor_trigger *tr
 
         burst_buffer[i].timestamp = now;
         burst_buffer[i].ecg = val;
-        // burst_buffer[i].resp = 0;
+        burst_buffer[i].resp = buf;
     }
 
     if (ble_is_ready()) {
@@ -106,8 +125,26 @@ struct bt_conn_cb connection_callbacks = {
     .disconnected = on_ble_disconnect,
 };
 
+
+
 int main(void)
 {
+    if (!adc_is_ready_dt(&adc_channel)) {
+	    printk("ADC device not ready\n");
+        return 0;
+    }
+
+    err = adc_channel_setup_dt(&adc_channel);
+    if (err < 0) {
+        printk("Failed to setup ADC channel (%d)\n", err);
+        return 0;
+    }
+
+    err = adc_sequence_init_dt(&adc_channel, &sequence);
+    if (err < 0) {
+        printk("Failed to initialize ADC sequence (%d)\n", err);
+        return 0;
+    }
 
     gpio_pin_configure(gpio_dev, TPS_EN_PIN, GPIO_OUTPUT_LOW);
     k_msleep(100);
