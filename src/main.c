@@ -9,6 +9,7 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/drivers/i2c.h> /* Required for I2C access */
 #include <zephyr/drivers/adc.h>
+#include <hal/nrf_power.h>
 
 #include "ble.h"
 
@@ -134,6 +135,14 @@ struct bt_conn_cb connection_callbacks = {
 
 int main(void)
 {
+
+    // nrf_power_dcdcen_vddh_set(NRF_POWER, true);
+    bool dcdc_state = nrf_power_dcdcen_vddh_get(NRF_POWER);
+    printk("DCDC VDDH state: (%d)\n", dcdc_state);
+
+    // nrf_power_dcdcen_set(NRF_POWER, true);
+    bool dcdc_state1 = nrf_power_dcdcen_get(NRF_POWER);
+    printk("DCDC VDDH state: (%d)\n", dcdc_state1);
 
     const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
 

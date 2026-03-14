@@ -1,9 +1,15 @@
+// / {
+//     aliases {
+//         max30101 = &max30101;
+//     };
+// };
+
 / {
     aliases {
-        max30101 = &max30101;
+        // Update alias to point to the new sensor
+        ppg-sensor = &maxm86161;
     };
 };
-
 
 &pinctrl {
     i2c1_default: i2c1_default {
@@ -32,25 +38,32 @@
     pinctrl-names = "default", "sleep";
     clock-frequency = <I2C_BITRATE_STANDARD>; /* 400kHz */
 
-    max30101: max30101@57 {
-        compatible = "maxim,max30101";
-        reg = <0x57>;
-
+    maxm86161: maxm86161@62 {
+        compatible = "maxim,maxm86161"; // Using a generic name for identification
+        reg = <0x62>;
         irq-gpios = <&gpio0 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-
-        led-slot = <3 0 0 0>;
-
-        led-pa = <0 0 0x3F>;
-
-        acq-mode = "multi-led";
-        adc-rge = <1>;
-        smp-sr = <6>;
-        led-pw = <2>;
-
-        smp-ave = <4>;
-        fifo-rollover-en;
-        fifo-watermark = <10>;
+        status = "okay";
     };
+
+    // max30101: max30101@57 {
+    //     compatible = "maxim,max30101";
+    //     reg = <0x57>;
+
+    //     irq-gpios = <&gpio0 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+
+    //     led-slot = <3 0 0 0>;
+
+    //     led-pa = <0 0 0x3F>;
+
+    //     acq-mode = "multi-led";
+    //     adc-rge = <1>;
+    //     smp-sr = <6>;
+    //     led-pw = <2>;
+
+    //     smp-ave = <4>;
+    //     fifo-rollover-en;
+    //     fifo-watermark = <10>;
+    // };
 };
 
 / {
@@ -72,3 +85,34 @@
 		zephyr,resolution = <12>;
 	};
 };
+
+// This is the DCDC
+&reg1 {
+    // regulator-initial-mode = < 0x0 >; /* Force LDO mode (Safe for no inductors) */
+    status = "okay";
+};
+
+&reg0 {
+    /* "disabled" = Tell Zephyr to leave the HV DCDC pump off (LDO mode) */
+    status = "okay";
+};
+
+// &reg0 {
+//     /* Keep this okay if you have L1 populated for your 3.7V battery */
+//     regulator-initial-mode = < 0x0 >; /* Force LDO mode (Safe for no inductors) */
+// };
+
+// reg1: regulator@40000578 {
+// 	compatible = "nordic,nrf5x-regulator"; /* in zephyr/dts/arm/nordic/nrf52840.dtsi:97 */
+// 	reg = < 0x40000578 0x1 >;              /* in zephyr/dts/arm/nordic/nrf52840.dtsi:98 */
+// 	regulator-name = "REG1";               /* in zephyr/dts/arm/nordic/nrf52840.dtsi:99 */
+// 	regulator-initial-mode = < 0x0 >;      /* in ../../../../Users/tpfeffer/PPG/boards/nrf52840dk_nrf52840.overlay:77 */
+// };
+
+// /* node '/soc/power@40000000/regulator@40000580' defined in zephyr/dts/arm/nordic/nrf52840_qiaa.dtsi:19 */
+// reg0: regulator@40000580 {
+// 	compatible = "nordic,nrf52x-regulator-hv"; /* in zephyr/dts/arm/nordic/nrf52840_qiaa.dtsi:20 */
+// 	reg = < 0x40000580 0x1 >;                  /* in zephyr/dts/arm/nordic/nrf52840_qiaa.dtsi:21 */
+// 	regulator-name = "REG0";                   /* in zephyr/dts/arm/nordic/nrf52840_qiaa.dtsi:22 */
+// 	status = "okay";                           /* in ../../../../Users/tpfeffer/PPG/boards/nrf52840dk_nrf52840.overlay:82 */
+// };
