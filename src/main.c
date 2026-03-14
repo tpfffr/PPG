@@ -4,125 +4,57 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/devicetree.h>
-// #include <hal/nrf_saadc.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
-#include <zephyr/drivers/i2c.h> /* Required for I2C access */
+#include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/adc.h>
 #include <hal/nrf_power.h>
 
+/* New Driver and BLE Headers */
+#include "maxm86161.h"
 #include "ble.h"
 
 #define TPS_EN_PIN 31
-#define CTRL_PIN 24
-#define MAX30101_SENSOR_CHANNEL SENSOR_CHAN_GREEN
-#define MAX30101_REG_MODE_CFG       0x09
-#define MAX30101_MODE_CFG_SHDN_MASK 0x80
+#define CTRL_PIN   24
 
+/* Structure for BLE data transmission */
 struct __packed sensor_packet {
-	uint64_t timestamp;
-	int32_t  ecg;
-	int32_t  resp;
+    uint64_t timestamp;
+    uint32_t ecg;
+    uint32_t resp;
+
 };
 
-int32_t err;
-
-int16_t buf;
+/* Global Variables */
+int16_t adc_buf;
 struct adc_sequence sequence = {
-    .buffer = &buf,
-    .buffer_size = sizeof(buf),
+    .buffer = &adc_buf,
+    .buffer_size = sizeof(adc_buf),
 };
-
 
 const struct device *gpio_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
-const struct device *dev;
-
-static const struct i2c_dt_spec sensor_i2c = I2C_DT_SPEC_GET(DT_ALIAS(max30101));
+static const struct i2c_dt_spec ppg_sensor = I2C_DT_SPEC_GET(DT_ALIAS(maxm86161));
 static const struct adc_dt_spec adc_channel = ADC_DT_SPEC_GET(DT_PATH(zephyr_user));
 
-static bool is_connected = false;
-
-#if CONFIG_MAX30101_TRIGGER
-static struct sensor_trigger trig_drdy;
-
-void max30101_enter_sleep(void) {
-    if (!device_is_ready(sensor_i2c.bus)) {
-        printk("ERR: I2C bus not ready\n");
-        return;
-    }
-
-    int ret = i2c_reg_update_byte_dt(&sensor_i2c, MAX30101_REG_MODE_CFG,
-                                     MAX30101_MODE_CFG_SHDN_MASK,
-                                     MAX30101_MODE_CFG_SHDN_MASK);
-    if (ret == 0) {
-        printk("CMD: Sensor entered Sleep Mode\n");
-    } else {
-        printk("ERR: Failed to sleep sensor (%d)\n", ret);
-    }
-}
-
-void max30101_exit_sleep(void) {
-    if (!device_is_ready(sensor_i2c.bus)) return;
-
-    int ret = i2c_reg_update_byte_dt(&sensor_i2c, MAX30101_REG_MODE_CFG,
-                                     MAX30101_MODE_CFG_SHDN_MASK,
-                                     0);
-    if (ret == 0) {
-        printk("CMD: Sensor woke up\n");
-    } else {
-        printk("ERR: Failed to wake sensor (%d)\n", ret);
-    }
-}
-void sensor_data_ready(const struct device *dev, const struct sensor_trigger *trigger)
-{
-    struct sensor_packet burst_buffer[10];
-    int32_t val;
-    uint32_t now = k_ticks_to_us_near32(k_uptime_ticks());
-
-    err = adc_read(adc_channel.dev, &sequence);
-    if (err < 0) {
-        printk("ADC read error: %d\n", err);
-    }
-    else {
-        printk("ADC value: %d\n", buf);
-    }
-
-    int32_t val_mv = buf;
-    adc_raw_to_millivolts_dt(&adc_channel, &val_mv);
-    int32_t batt_mv = (val_mv * 1050) / 300;
-
-    for (int i = 0; i < 10; i++) {
-
-        sensor_sample_fetch(dev);
-        sensor_channel_get(dev, MAX30101_SENSOR_CHANNEL, (struct sensor_value *)&val);
-
-        burst_buffer[i].timestamp = now;
-        burst_buffer[i].ecg = val;
-        burst_buffer[i].resp = batt_mv;
-    }
-
-    if (ble_is_ready()) {
-        /* Send all 160 bytes at once */
-        ble_send_sensor_data(burst_buffer, sizeof(burst_buffer));
-    }
-}
-#endif
-
-void on_ble_connect(struct bt_conn *conn, uint8_t err)
-{
+/* BLE Connection Callbacks */
+void on_ble_connect(struct bt_conn *conn, uint8_t err) {
     if (err) return;
+    printk("BLE Connected. Powering on sensor...\n");
 
+    // Enable Power via TPS pin
     gpio_pin_set(gpio_dev, TPS_EN_PIN, 1);
-    max30101_exit_sleep();
+    k_msleep(50); // Wait for power to stabilize
 
-    is_connected = true;
+    // Initialize/Wake the sensor
+    if (maxm86161_init(&ppg_sensor) == 0) {
+        maxm86161_start(&ppg_sensor);
+        printk("MAXM86161 Started\n");
+    }
 }
 
-void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
-{
-    is_connected = false;
-    max30101_enter_sleep();
-
+void on_ble_disconnect(struct bt_conn *conn, uint8_t reason) {
+    printk("BLE Disconnected. Sleeping sensor...\n");
+    maxm86161_stop(&ppg_sensor);
     gpio_pin_set(gpio_dev, TPS_EN_PIN, 0);
 }
 
@@ -131,67 +63,53 @@ struct bt_conn_cb connection_callbacks = {
     .disconnected = on_ble_disconnect,
 };
 
+/* Battery Reading Helper */
+uint32_t read_battery_mv(void) {
+    int err = adc_read(adc_channel.dev, &sequence);
+    if (err < 0) return 0;
 
+    int32_t val_mv = adc_buf;
+    adc_raw_to_millivolts_dt(&adc_channel, &val_mv);
+    return (uint32_t)((val_mv * 1050) / 300); // Your specific voltage divider math
+}
 
-int main(void)
-{
+int main(void) {
+    // Initial Power setup
+    if (!device_is_ready(gpio_dev)) return -1;
+    gpio_pin_configure(gpio_dev, CTRL_PIN, GPIO_OUTPUT_HIGH);
+    gpio_pin_configure(gpio_dev, TPS_EN_PIN, GPIO_OUTPUT_LOW); // Start OFF
 
-    // nrf_power_dcdcen_vddh_set(NRF_POWER, true);
-    bool dcdc_state = nrf_power_dcdcen_vddh_get(NRF_POWER);
-    printk("DCDC VDDH state: (%d)\n", dcdc_state);
+    // Setup ADC
+    if (!adc_is_ready_dt(&adc_channel)) return -1;
+    adc_channel_setup_dt(&adc_channel);
+    adc_sequence_init_dt(&adc_channel, &sequence);
 
-    // nrf_power_dcdcen_set(NRF_POWER, true);
-    bool dcdc_state1 = nrf_power_dcdcen_get(NRF_POWER);
-    printk("DCDC VDDH state: (%d)\n", dcdc_state1);
-
-    const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
-
-    if (device_is_ready(gpio0_dev)) {
-        gpio_pin_configure(gpio0_dev, CTRL_PIN, GPIO_OUTPUT_HIGH);
-        k_msleep(100);
-    }
-
-    if (!adc_is_ready_dt(&adc_channel)) {
-	    printk("ADC device not ready\n");
-        return 0;
-    }
-
-    err = adc_channel_setup_dt(&adc_channel);
-    if (err < 0) {
-        printk("Failed to setup ADC channel (%d)\n", err);
-        return 0;
-    }
-
-    err = adc_sequence_init_dt(&adc_channel, &sequence);
-    if (err < 0) {
-        printk("Failed to initialize ADC sequence (%d)\n", err);
-        return 0;
-    }
-
-    gpio_pin_configure(gpio_dev, TPS_EN_PIN, GPIO_OUTPUT_LOW);
-    k_msleep(100);
-
+    // Initialize BLE
     bt_conn_cb_register(&connection_callbacks);
-    k_msleep(100);
-
     ble_init();
-    k_msleep(100);
 
-    dev = DEVICE_DT_GET(DT_ALIAS(max30101));
+    printk("System initialized. Waiting for BLE connection...\n");
 
-    if (!device_is_ready(dev)) {
-        printk("MAX30101 not ready\n");
-        return -1;
-    }
-
-    trig_drdy.type = SENSOR_TRIG_FIFO_WATERMARK;
-    trig_drdy.chan = MAX30101_SENSOR_CHANNEL;
-    sensor_trigger_set(dev, &trig_drdy, sensor_data_ready);
-
-    max30101_enter_sleep();
+    maxm86161_sample_t raw_sample;
+    struct sensor_packet tx_packet;
 
     while (1) {
-        k_sleep(K_FOREVER);
+        if (ble_is_ready()) {
+            // Read from MAXM86161 FIFO
+            if (maxm86161_read_fifo(&ppg_sensor, &raw_sample, 1) > 0) {
+
+                tx_packet.timestamp = k_uptime_get();
+                tx_packet.ecg = raw_sample.led1;
+                tx_packet.resp = read_battery_mv();
+                // tx_packet.led3 = raw_sample.led3;
+                // tx_packet.batt_mv = read_battery_mv();
+
+                ble_send_sensor_data(&tx_packet, sizeof(tx_packet));
+            }
+            k_msleep(10); // Adjust based on your sample rate (100Hz = 10ms)
+        } else {
+            k_msleep(500); // Low power polling when not connected
+        }
     }
     return 0;
 }
