@@ -8,38 +8,41 @@
 #define REG_LED_RANGE1 0x2A
 
 LOG_MODULE_REGISTER(maxm_lite, LOG_LEVEL_INF);
-
 int maxm86161_init(const struct i2c_dt_spec *spec) {
     uint8_t id;
     if (!device_is_ready(spec->bus)) return -ENODEV;
 
-    // Software Reset
-    i2c_reg_write_byte_dt(spec, REG_SYSTEM_CONTROL, 0x01);
+    // 1. Software Reset
+    i2c_reg_write_byte_dt(spec, REG_SYSTEM_CONTROL, 0x01); //
     k_msleep(50);
 
-    // Verify Part ID
-    i2c_reg_read_byte_dt(spec, REG_PART_ID, &id);
-    if (id != MAXM86161_PART_ID) {
-        return -EIO;
-    }
+    // 2. Verify Part ID
+    i2c_reg_read_byte_dt(spec, REG_PART_ID, &id); //
+    if (id != 0x36) return -EIO;
 
-    uint8_t smp_ave = 0x02; // Average 4 samples
-    uint8_t smp_sr  = 0x05; // 400 SPS
-    i2c_reg_write_byte_dt(spec, REG_PPG_CONFIG2, (smp_sr << 3) | smp_ave);
+    // 3. Timing: 400 SPS, 4x Averaging = 100Hz effective output
+    // SMP_AVE (bits 2:0) = 0x02 (4x) | PPG_SR (bits 7:3) = 0x05 (400Hz)
+    i2c_reg_write_byte_dt(spec, REG_PPG_CONFIG2, (0x05 << 3) | 0x02); //
 
-    // 1. Set LED Range (e.g., up to 124mA)
-    i2c_reg_write_byte_dt(spec, REG_LED_RANGE1, 0x3F);
+    // 4. ADC Config: 16,384nA range, 117.3us integration time
+    // PPG1_ADC_RGE (bits 3:2) = 0x02 | PPG_TINT (bits 1:0) = 0x03
+    i2c_reg_write_byte_dt(spec, 0x11, 0x0B); //
 
-    i2c_reg_write_byte_dt(spec, 0x11, 0x1F); //
-    i2c_reg_write_byte_dt(spec, REG_LED_SEQ1, 0x01); // Slot 1 = LED1, Slot 2 = Disabled
-    i2c_reg_write_byte_dt(spec, REG_LED_SEQ2, 0x00); // Slot 3 = Disabled, Slot 4 = Disabled
-    // i2c_reg_write_byte_dt(spec, REG_LED_SEQ3, 0x00); // Slot 5 = Disabled, Slot 6 = Disabled
+    // 5. LED Range: Set Green LED to 124mA full-scale
+    i2c_reg_write_byte_dt(spec, REG_LED_RANGE1, 0x3F); //
 
-    // 6. Set LED1 Current (Green) - matches led-pa = <0x3F>
-    i2c_reg_write_byte_dt(spec, REG_LED1_PA, 0x20);
+    // 6. LED Current: Set Green LED to ~38mA (0x4F)
+    i2c_reg_write_byte_dt(spec, REG_LED1_PA, 0x4F); //
+
+    // 7. Picket Fence: Enable to cancel rapid ambient transients
+    i2c_reg_write_byte_dt(spec, 0x16, 0x83); //
+
+    // 8. Sequence: Slot 1 = Green LED, others disabled
+    i2c_reg_write_byte_dt(spec, REG_LED_SEQ1, 0x01); //
+    i2c_reg_write_byte_dt(spec, REG_LED_SEQ2, 0x00);
+
     return 0;
 }
-
 
 int maxm86161_start(const struct i2c_dt_spec *spec) {
     return i2c_reg_write_byte_dt(spec, REG_SYSTEM_CONTROL, 0x04); // LP Mode On
