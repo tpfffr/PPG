@@ -26,13 +26,13 @@ int maxm86161_init(const struct i2c_dt_spec *spec) {
 
     // 4. ADC Config: 16,384nA range, 117.3us integration time
     // PPG1_ADC_RGE (bits 3:2) = 0x02 | PPG_TINT (bits 1:0) = 0x03
-    i2c_reg_write_byte_dt(spec, 0x11, 0x0B); //
+    i2c_reg_write_byte_dt(spec, 0x11, 0x03); //
 
     // 5. LED Range: Set Green LED to 124mA full-scale
     i2c_reg_write_byte_dt(spec, REG_LED_RANGE1, 0x3F); //
 
     // 6. LED Current: Set Green LED to ~38mA (0x4F)
-    i2c_reg_write_byte_dt(spec, REG_LED1_PA, 0x4F); //
+    i2c_reg_write_byte_dt(spec, REG_LED1_PA, 0x2F); //
 
     // 7. Picket Fence: Enable to cancel rapid ambient transients
     i2c_reg_write_byte_dt(spec, 0x16, 0x83); //

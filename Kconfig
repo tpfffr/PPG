@@ -1,0 +1,25 @@
+menu "MAX32664C Configuration"
+    config MAX32664C_QUEUE_SIZE
+        int "Queue size"
+        default 10
+    config MAX32664C_SAMPLE_BUFFER_SIZE
+        int "I2C Sample buffer size"
+        default 10
+    config MAX32664C_THREAD_STACK_SIZE
+        int "Worker thread stack size"
+        default 1024
+    config MAX32664C_USE_STATIC_MEMORY
+        bool "Use static memory"
+        default y
+    config MAX32664C_USE_EXTENDED_REPORTS
+        bool "Use extended reports"
+        default n
+    config MAX32664C_USE_INTERRUPT
+        bool "Use interrupt"
+        default n
+    config MAX32664C_USE_EXTERNAL_ACC
+        bool "Use external accelerometer"
+        default n
+endmenu
+
+source "Kconfig.zephyr"

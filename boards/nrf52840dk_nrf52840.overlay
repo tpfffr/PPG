@@ -1,24 +1,58 @@
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
+#include <zephyr/dt-bindings/pinctrl/nrf-pinctrl.h>
+#include <zephyr/dt-bindings/adc/adc.h>
+#include <zephyr/dt-bindings/regulator/nrf5x.h>
+
+
 / {
-    aliases {
-        /* This alias allows the C code to find the sensor easily */
-        maxm86161 = &maxm86161;
+    zephyr,user {
+        /* This maps the "zephyr_user" path in your main.c to ADC channel 0 */
+        io-channels = <&adc 0>;
     };
+};
+
+&adc {
+    status = "okay";
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    channel@0 {
+        reg = <0>;
+        zephyr,gain = "ADC_GAIN_1_2";
+        zephyr,reference = "ADC_REF_INTERNAL";
+        zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+        zephyr,input-positive = <NRF_SAADC_VDDHDIV5>; /* The magic internal pin! */
+        zephyr,resolution = <12>;
+    };
+};
+
+/* REG0: High Voltage Stage (3.7V Battery -> 1.8V VDD) */
+&reg0 {
+    status = "okay";
+};
+
+/* REG1: Core/Radio Stage (1.8V VDD -> 1.1V Core) */
+&reg1 {
+    status = "okay";
+    /* THIS IS THE CRITICAL PART: Since you lack the core inductors,
+       we force LDO mode here so the radio can actually start. */
+    regulator-initial-mode = <NRF5X_REG_MODE_LDO>;
 };
 
 &pinctrl {
     i2c1_default: i2c1_default {
         group1 {
-            /* Using P0.26 (SDA) and P0.27 (SCL) as per your previous setup */
-            psels = <NRF_PSEL(TWIM_SDA, 0, 26)>,
-                    <NRF_PSEL(TWIM_SCL, 0, 27)>;
+            psels = <NRF_PSEL(TWIM_SDA, 0, 30)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 28)>;
             bias-pull-up;
         };
     };
 
     i2c1_sleep: i2c1_sleep {
         group1 {
-            psels = <NRF_PSEL(TWIM_SDA, 0, 26)>,
-                    <NRF_PSEL(TWIM_SCL, 0, 27)>;
+            psels = <NRF_PSEL(TWIM_SDA, 0, 30)>,
+                    <NRF_PSEL(TWIM_SCL, 0, 28)>;
             low-power-enable;
         };
     };
@@ -30,36 +64,35 @@
     pinctrl-0 = <&i2c1_default>;
     pinctrl-1 = <&i2c1_sleep>;
     pinctrl-names = "default", "sleep";
-    clock-frequency = <I2C_BITRATE_FAST>; /* 400kHz for PPG data */
+    clock-frequency = <100000>;
 
-    maxm86161: maxm86161@62 {
-        compatible = "maxim,maxm86161";
-        reg = <0x62>; /* Correct I2C address for MAXM86161 */
 
-        /* Interrupt pin for data ready signals */
-        irq-gpios = <&gpio0 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
-
+    max32664: max32664@55 {
+        compatible = "maxim,max32664c";
+        reg = <0x55>;
         status = "okay";
+
+        reset-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
+        mfio-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
+
+        use-max86141;
+        report-period = <100>;
+
+        led-current = <20 20 20>;
+        spo2-calib = <15958422 1847171 (-10546543)>;
+        hr-config = [00 01];
+        spo2-config = [11 21];
+        motion-threshold = <10>;
+        motion-time = <1>;
+
+        /* Enums mapped to the YAML binding */
+        min-integration-time = "0.4ms";
+        max-integration-time = "1.6ms";
+        min-sampling-rate = "100Hz";
+        max-sampling-rate = "400Hz";
     };
 };
 
-/* Keep your ADC configuration if you still need battery monitoring */
-&adc {
-    status = "okay";
-    #address-cells = <1>;
-    #size-cells = <0>;
-    channel@1 {
-        reg = <1>;
-        zephyr,gain = "ADC_GAIN_1_6";
-        zephyr,reference = "ADC_REF_INTERNAL";
-        zephyr,acquisition-time = <ADC_ACQ_TIME(ADC_ACQ_TIME_MICROSECONDS, 40)>;
-        zephyr,input-positive = <NRF_SAADC_AIN1>; /* P0.02 */
-        zephyr,resolution = <12>;
-    };
-};
-
-/ {
-    zephyr,user {
-        io-channels = <&adc 1>;
-    };
+&gpio1 {
+	status = "okay";
 };

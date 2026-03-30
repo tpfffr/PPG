@@ -1,0 +1,42 @@
+# dts/bindings/maxim,max32664c.yaml
+description: MAX32664C Biometric Sensor Hub
+compatible: "maxim,max32664c"
+include: i2c-device.yaml
+
+properties:
+  reset-gpios:
+    type: phandle-array
+    required: true
+  mfio-gpios:
+    type: phandle-array
+    required: true
+  use-max86141:
+    type: boolean
+  use-max86161:
+    type: boolean
+  report-period:
+    type: int
+  led-current:
+    type: array
+  spo2-calib:
+    type: array
+  hr-config:
+    type: uint8-array
+  spo2-config:
+    type: uint8-array
+  motion-threshold:
+    type: int
+  motion-time:
+    type: int
+  min-integration-time:
+    type: string
+    enum: ["0.4ms", "0.8ms", "1.6ms"]
+  max-integration-time:
+    type: string
+    enum: ["0.4ms", "0.8ms", "1.6ms"]
+  min-sampling-rate:
+    type: string
+    enum: ["100Hz", "400Hz"]
+  max-sampling-rate:
+    type: string
+    enum: ["100Hz", "400Hz"]
