@@ -38,6 +38,8 @@ extern int max32664c_i2c_transmit(const struct device *dev, uint8_t *tx_buf, uin
 static uint8_t current_ppg_sr_code  = 0x04; // 200 sps AFE => ~100 delivered/s in your setup
 static uint8_t current_smp_ave_code = 0x00; // no averaging
 
+static struct bt_le_conn_param *conn_param = BT_LE_CONN_PARAM(20, 40, 0, 400);
+
 static int afe_read_reg(const struct device *dev, uint8_t reg, uint8_t *val)
 {
     uint8_t tx[3] = {0x41, 0x00, reg};
@@ -51,6 +53,7 @@ static int afe_read_reg(const struct device *dev, uint8_t reg, uint8_t *val)
     *val = rx[1];
     return 0;
 }
+
 
 static int afe_write_reg(const struct device *dev, uint8_t reg, uint8_t val)
 {
@@ -135,6 +138,13 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
     printk("Connected to client!\n");
     current_conn = bt_conn_ref(conn);
+
+	int param_err = bt_conn_le_param_update(conn, conn_param);
+    if (param_err) {
+        printk("Connection interval update failed (err %d)\n", param_err);
+    } else {
+        printk("Connection interval update requested\n");
+    }
 
     /* 1. Print the starting MTU (typically 23) */
     printk("Initial MTU: %d\n", bt_gatt_get_mtu(conn));
@@ -295,7 +305,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
     }
 
     case 3: { // delivered rate selector
-        static const uint8_t delivered_to_afe_sr_map[] = { 0x01, 0x03, 0x04, 0x05 };
+        static const uint8_t delivered_to_afe_sr_map[] = { 0x01, 0x03, 0x04, 0x05, 0x06 };
 
         if (value >= ARRAY_SIZE(delivered_to_afe_sr_map)) {
             printk("BLE: invalid rate idx=%u\n", value);
@@ -304,6 +314,8 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
 
         current_ppg_sr_code = delivered_to_afe_sr_map[value];
         uint8_t reg12 = make_reg12(current_ppg_sr_code, current_smp_ave_code);
+
+		// int err = afe_write_reg(max32664_dev, 0x12, 0x20);
 
         int err = afe_write_reg(max32664_dev, 0x12, reg12);
         printk("BLE: Set delivered-rate idx=%u -> reg 0x12 = 0x%02X err=%d\n",

@@ -18,7 +18,7 @@
 #define MAX32664C_BIT_STATUS_IN_OVFL  5
 #define MAX32664C_BIT_STATUS_BUSY     6
 
-#define MAX32664C_DEFAULT_CMD_DELAY 10
+#define MAX32664C_DEFAULT_CMD_DELAY 2
 
 /** @brief Output formats of the sensor hub.
  */
@@ -150,12 +150,13 @@ struct max32664c_config {
 	struct i2c_dt_spec i2c;
 	struct gpio_dt_spec reset_gpio;
 
-#ifdef CONFIG_MAX32664C_USE_INTERRUPT
-	const struct device *dev;
-	struct gpio_callback gpio_cb;
-	struct k_work interrupt_work;
-#endif /* CONFIG_MAX32664C_USE_INTERRUPT */
+// #ifdef CONFIG_MAX32664C_USE_INTERRUPT
+// 	const struct device *dev;
+// 	struct gpio_callback gpio_cb;
+// 	struct k_work interrupt_work;
+// #endif /* CONFIG_MAX32664C_USE_INTERRUPT */
 
+	struct gpio_dt_spec int_gpio;
 	struct gpio_dt_spec mfio_gpio;
 
 	int32_t spo2_calib[3];
@@ -182,6 +183,11 @@ struct max32664c_data {
 	struct max32664c_scd_report_t scd;
 	struct max32664c_report_t report;
 	struct max32664c_ext_report_t ext;
+
+	#ifdef CONFIG_MAX32664C_USE_INTERRUPT
+		struct gpio_callback gpio_cb;
+		struct k_work interrupt_work;
+	#endif
 
 	enum max32664c_device_mode op_mode; /**< Current device mode */
 

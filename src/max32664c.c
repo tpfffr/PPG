@@ -241,6 +241,8 @@ int max32664c_set_mode_raw(const struct device *dev)
 		return -EINVAL;
 	}
 
+
+
 	LOG_INF("Entering RAW mode...");
 	/* Set the output format to sensor data only */
 	printk("-> RAW Mode Check 2: Setting output format...\n");
@@ -319,6 +321,9 @@ int max32664c_set_mode_raw(const struct device *dev)
 	/* Tell AFE: Time Slot 1 = LED1 (Green), Time Slot 2 = LED2 (IR) */
 	tx[0] = 0x40; tx[1] = 0x00; tx[2] = 0x20; tx[3] = 0x21;
 	max32664c_i2c_transmit(dev, tx, 4, &rx, 1, 2);
+
+	// uint8_t tx_pd[] = {0x40, 0x00, 0x10, 0x02};
+	// max32664c_i2c_transmit(dev, tx_pd, 4, &rx, 1, 10);
 
 	/* Tell AFE: Time Slot 3 = LED3 (Red), Time Slot 4 = None */
 	tx[0] = 0x40; tx[1] = 0x00; tx[2] = 0x21; tx[3] = 0x03;
@@ -1126,6 +1131,15 @@ static int max32664c_init(const struct device *dev)
 		return -EINVAL;
 	}
 
+
+
+	// #ifdef CONFIG_MAX32664C_USE_INTERRUPT
+	// if (max32664c_init_interrupt(dev)) {
+	// 	LOG_ERR("Failed to initialize interrupt mode");
+	// 	return -EINVAL;
+	// }
+	// #endif
+
 #ifdef CONFIG_MAX32664C_USE_STATIC_MEMORY
 	k_msgq_init(&data->raw_report_queue, data->raw_report_queue_buffer,
 		    sizeof(struct max32664c_raw_report_t),
@@ -1199,6 +1213,7 @@ static int max32664c_pm_action(const struct device *dev, enum pm_device_action a
 		.i2c = I2C_DT_SPEC_INST_GET(inst),                                                 \
 		.reset_gpio = GPIO_DT_SPEC_INST_GET(inst, reset_gpios),                            \
 		.mfio_gpio = GPIO_DT_SPEC_INST_GET(inst, mfio_gpios),                              \
+		.int_gpio = GPIO_DT_SPEC_INST_GET(inst, int_gpios),								 	\
 		.spo2_calib = DT_INST_PROP(inst, spo2_calib),                                      \
 		.hr_config = DT_INST_PROP(inst, hr_config),                                        \
 		.spo2_config = DT_INST_PROP(inst, spo2_config),                                    \

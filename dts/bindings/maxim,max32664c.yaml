@@ -10,6 +10,8 @@ properties:
   mfio-gpios:
     type: phandle-array
     required: true
+  int-gpios:
+    type: phandle-array
   use-max86141:
     type: boolean
   use-max86161:

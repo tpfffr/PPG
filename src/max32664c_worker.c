@@ -276,7 +276,7 @@ void max32664c_worker(const struct device *dev)
 		err = max32664c_get_hub_status(dev, &status, &i2c_error);
 		if (err) {
 			LOG_ERR("Failed to get hub status! Error: %d", err);
-			k_msleep(5);
+			k_msleep(2);
 			continue;
 		}
 
@@ -289,13 +289,13 @@ void max32664c_worker(const struct device *dev)
 		err = max32664c_get_fifo_count(dev, &fifo);
 		if (err) {
 			LOG_ERR("Failed to get FIFO count! Error: %d", err);
-			k_msleep(5);
+			k_msleep(2);
 			continue;
 		}
 
 		if (fifo == 0) {
 			LOG_DBG("No data available in the FIFO.");
-			k_msleep(5);
+			k_msleep(2);
 			continue;
 		}
 #ifdef CONFIG_MAX32664C_USE_STATIC_MEMORY

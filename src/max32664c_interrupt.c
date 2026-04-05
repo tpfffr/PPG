@@ -8,14 +8,24 @@
 
 #include "max32664c.h"
 
+static uint32_t interrupt_count = 0;
+
 LOG_MODULE_REGISTER(maxim_max32664c_interrupt, CONFIG_SENSOR_LOG_LEVEL);
 
 #ifdef CONFIG_MAX32664C_USE_INTERRUPT
 static void max32664c_interrupt_worker(struct k_work *p_work)
 {
-	struct max32664c_data *data = CONTAINER_OF(p_work, struct max32664c_data, interrupt_work);
+    struct max32664c_data *data = CONTAINER_OF(p_work, struct max32664c_data, interrupt_work);
 
-	/* TODO */
+    interrupt_count++;
+
+    // Test: Print every 100 samples (roughly once per second)
+    if (interrupt_count % 100 == 0) {
+        printk("Interrupt signal received! Total pulses: %u\n", interrupt_count);
+    }
+
+    /* BRIDGE LOGIC: Signal the main data thread to wake up */
+    // k_sem_give(&data->data_ready_sem);
 }
 
 static void max32664c_gpio_callback_handler(const struct device *p_port, struct gpio_callback *p_cb,
@@ -25,7 +35,7 @@ static void max32664c_gpio_callback_handler(const struct device *p_port, struct 
 	ARG_UNUSED(p_port);
 
 	struct max32664c_data *data = CONTAINER_OF(p_cb, struct max32664c_data, gpio_cb);
-
+	interrupt_count++;
 	k_work_submit(&data->interrupt_work);
 }
 
