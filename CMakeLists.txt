@@ -15,5 +15,5 @@ target_sources(app PRIVATE
     src/max32664c_worker.c
     src/max32664c_interrupt.c
     src/max32664c_acc.c
-    src/max32664c_bl.c
+    # src/max32664c_bl.c
 )

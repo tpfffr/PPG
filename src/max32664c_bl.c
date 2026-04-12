@@ -42,21 +42,27 @@ static int max32664c_bl_i2c_transmit(const struct device *dev, uint8_t *tx_buf, 
 
 	err = i2c_write_dt(&config->i2c, tx_buf, tx_len);
 	if (err) {
-		LOG_ERR("I2C transmission error %d!", err);
+		printk("BL I2C WRITE ERR: %d (cmd 0x%02X 0x%02X)\n",
+		       err, tx_buf[0], (tx_len > 1) ? tx_buf[1] : 0x00);
 		return err;
 	}
-	k_msleep(MAX32664C_DEFAULT_CMD_DELAY_MS);
-	err = i2c_read_dt(&config->i2c, rx_buf, rx_len);
-	if (err) {
-		LOG_ERR("I2C transmission error %d!", err);
-		return err;
-	}
+
 	k_msleep(MAX32664C_DEFAULT_CMD_DELAY_MS);
 
-	/* Check the status byte for a valid transaction */
-	LOG_DBG("Status: %u", rx_buf[0]);
-	if (rx_buf[0] != 0) {
-		return -EINVAL;
+	err = i2c_read_dt(&config->i2c, rx_buf, rx_len);
+	if (err) {
+		printk("BL I2C READ ERR: %d (cmd 0x%02X 0x%02X)\n",
+		       err, tx_buf[0], (tx_len > 1) ? tx_buf[1] : 0x00);
+		return err;
+	}
+
+	k_msleep(MAX32664C_DEFAULT_CMD_DELAY_MS);
+
+	printk("BL STATUS: cmd=0x%02X 0x%02X status=0x%02X\n",
+	       tx_buf[0], (tx_len > 1) ? tx_buf[1] : 0x00, rx_buf[0]);
+
+	if (rx_buf[0] != 0x00) {
+		return rx_buf[0];
 	}
 
 	return 0;
@@ -104,44 +110,59 @@ static int max32664c_app_i2c_read(const struct device *dev, uint8_t family, uint
  */
 static int max32664c_bl_write_page(const struct device *dev, const uint8_t *data, uint32_t offset)
 {
-	int err;
-	uint8_t rx_buf;
-	uint8_t *tx_buf;
-	const struct max32664c_config *config = dev->config;
+    int err;
+    uint8_t rx_buf;
+    uint8_t *tx_buf;
+    const struct max32664c_config *config = dev->config;
 
-	/* Alloc memory for one page plus two command bytes */
-	tx_buf = (uint8_t *)k_malloc(MAX32664C_FW_UPDATE_WRITE_SIZE + 2);
-	if (tx_buf == NULL) {
-		return -ENOMEM;
-	}
+    tx_buf = (uint8_t *)k_malloc(MAX32664C_FW_UPDATE_WRITE_SIZE + 2);
+    if (tx_buf == NULL) {
+        return -ENOMEM;
+    }
 
-	/* Copy the data for one page into the buffer but leave space for the two command bytes */
-	memcpy(&tx_buf[2], &data[offset], MAX32664C_FW_UPDATE_WRITE_SIZE);
+    memcpy(&tx_buf[2], &data[offset], MAX32664C_FW_UPDATE_WRITE_SIZE);
+    tx_buf[0] = 0x80;
+    tx_buf[1] = 0x04;
 
-	/* Set the two command bytes */
-	tx_buf[0] = 0x80;
-	tx_buf[1] = 0x04;
+    for (int attempt = 0; attempt < 5; attempt++) {
+        /* Try to recover the bus before every giant transfer */
+        i2c_recover_bus(config->i2c.bus);
+        k_msleep(20);
 
-	if (i2c_write_dt(&config->i2c, tx_buf, MAX32664C_FW_UPDATE_WRITE_SIZE + 2)) {
-		err = -EINVAL;
-		goto max32664c_bl_write_page_exit;
-	};
-	k_msleep(MAX32664C_PAGE_WRITE_DELAY_MS);
-	err = i2c_read_dt(&config->i2c, &rx_buf, 1);
-	if (err) {
-		LOG_ERR("I2C read error %d!", err);
-		err = -EINVAL;
-		goto max32664c_bl_write_page_exit;
-	};
-	k_msleep(MAX32664C_DEFAULT_CMD_DELAY_MS);
+        err = i2c_write_dt(&config->i2c, tx_buf, MAX32664C_FW_UPDATE_WRITE_SIZE + 2);
+        if (err) {
+            printk("BL PAGE write err=%d attempt=%d\n", err, attempt + 1);
+            k_msleep(100);
+            continue;
+        }
 
-	err = rx_buf;
+        k_msleep(800);
 
-	LOG_DBG("Write page status: %u", err);
+        err = i2c_read_dt(&config->i2c, &rx_buf, 1);
+        if (err) {
+            printk("BL PAGE read err=%d attempt=%d\n", err, attempt + 1);
+            k_msleep(100);
+            continue;
+        }
 
-max32664c_bl_write_page_exit:
-	k_free(tx_buf);
-	return err;
+        printk("BL PAGE status=0x%02X attempt=%d\n", rx_buf, attempt + 1);
+
+        if (rx_buf == 0x00) {
+            k_free(tx_buf);
+            return 0;
+        }
+
+        if (rx_buf == 0x05) {
+            k_msleep(100);
+            continue;
+        }
+
+        k_free(tx_buf);
+        return rx_buf;
+    }
+
+    k_free(tx_buf);
+    return -EIO;
 }
 
 /** @brief      Erase the application from the sensor hub.
@@ -153,22 +174,28 @@ static int max32664c_bl_erase_app(const struct device *dev)
 	uint8_t tx_buf[2] = {0x80, 0x03};
 	uint8_t rx_buf;
 	const struct max32664c_config *config = dev->config;
+	int err;
 
-	if (i2c_write_dt(&config->i2c, tx_buf, sizeof(tx_buf))) {
-		return -EINVAL;
-	};
+	err = i2c_write_dt(&config->i2c, tx_buf, sizeof(tx_buf));
+	if (err) {
+		printk("BL ERASE write err=%d\n", err);
+		return err;
+	}
 
-	k_msleep(1500);
+	k_msleep(2200);
 
-	if (i2c_read_dt(&config->i2c, &rx_buf, sizeof(rx_buf))) {
-		return -EINVAL;
-	};
+	err = i2c_read_dt(&config->i2c, &rx_buf, sizeof(rx_buf));
+	if (err) {
+		printk("BL ERASE read err=%d\n", err);
+		return err;
+	}
 
 	k_msleep(MAX32664C_DEFAULT_CMD_DELAY_MS);
 
-	/* Check the status byte for a valid transaction */
-	if (rx_buf != 0) {
-		return -EINVAL;
+	printk("BL ERASE status=0x%02X\n", rx_buf);
+
+	if (rx_buf != 0x00) {
+		return rx_buf;
 	}
 
 	return 0;
@@ -183,88 +210,76 @@ static int max32664c_bl_erase_app(const struct device *dev)
  */
 static int max32664c_bl_load_fw(const struct device *dev, const uint8_t *firmware, uint32_t size)
 {
+	int err;
 	uint8_t rx_buf;
 	uint8_t tx_buf[18] = {0};
 	uint32_t page_offset;
-
-	/* Get the number of pages from the firmware file (see User Guide page 53) */
 	uint8_t num_pages = firmware[0x44];
 
-	LOG_INF("Loading firmware...");
-	LOG_INF("\tSize: %u", size);
-	LOG_INF("\tPages: %u", num_pages);
+	printk("BL LOAD: size=%u num_pages=%u\n", size, num_pages);
 
-	/* Set the number of pages */
+	/* Set number of pages */
 	tx_buf[0] = 0x80;
 	tx_buf[1] = 0x02;
 	tx_buf[2] = 0x00;
 	tx_buf[3] = num_pages;
-	if (max32664c_bl_i2c_transmit(dev, tx_buf, 4, &rx_buf, 1)) {
-		return -EINVAL;
+	err = max32664c_bl_i2c_transmit(dev, tx_buf, 4, &rx_buf, 1);
+	printk("BL STEP set_num_pages -> %d\n", err);
+	if (err) {
+		return err;
 	}
 
-	if (rx_buf != 0) {
-		LOG_ERR("Failed to set number of pages: %d", rx_buf);
-		return -EINVAL;
-	}
-
-	/* Get the initialization and authentication vectors from the firmware */
-	/* (see User Guide page 53) */
+	/* Extract IV + auth from .msbl */
 	memcpy(max32664c_fw_init_vector, &firmware[0x28], sizeof(max32664c_fw_init_vector));
 	memcpy(max32664c_fw_auth_vector, &firmware[0x34], sizeof(max32664c_fw_auth_vector));
 
-	/* Write the initialization vector */
-	LOG_INF("\tWriting init vector...");
+	/* Write IV */
 	tx_buf[0] = 0x80;
 	tx_buf[1] = 0x00;
 	memcpy(&tx_buf[2], max32664c_fw_init_vector, sizeof(max32664c_fw_init_vector));
-	if (max32664c_bl_i2c_transmit(dev, tx_buf, 13, &rx_buf, 1)) {
-		return -EINVAL;
-	}
-	if (rx_buf != 0) {
-		LOG_ERR("Failed to set init vector: %d", rx_buf);
-		return -EINVAL;
+	err = max32664c_bl_i2c_transmit(dev, tx_buf, 13, &rx_buf, 1);
+	printk("BL STEP write_iv -> %d\n", err);
+	if (err) {
+		return err;
 	}
 
-	/* Write the authentication vector */
-	LOG_INF("\tWriting auth vector...");
+	/* Write auth */
 	tx_buf[0] = 0x80;
 	tx_buf[1] = 0x01;
 	memcpy(&tx_buf[2], max32664c_fw_auth_vector, sizeof(max32664c_fw_auth_vector));
-	if (max32664c_bl_i2c_transmit(dev, tx_buf, 18, &rx_buf, 1)) {
-		return -EINVAL;
-	}
-	if (rx_buf != 0) {
-		LOG_ERR("Failed to set auth vector: %d", rx_buf);
-		return -EINVAL;
+	err = max32664c_bl_i2c_transmit(dev, tx_buf, 18, &rx_buf, 1);
+	printk("BL STEP write_auth -> %d\n", err);
+	if (err) {
+		return err;
 	}
 
-	/* Remove the old app from the hub */
-	LOG_INF("\tRemove old app...");
-	if (max32664c_bl_erase_app(dev)) {
-		return -EINVAL;
+	/* Erase app */
+	err = max32664c_bl_erase_app(dev);
+	printk("BL STEP erase_app -> %d\n", err);
+	if (err) {
+		return err;
 	}
 
-	/* Write the new firmware */
-	LOG_INF("\tWriting new firmware...");
+	/* Write pages */
 	page_offset = 0x4C;
 	for (uint8_t i = 0; i < num_pages; i++) {
-		uint8_t status;
+		int status;
 
-		LOG_INF("\t\tPage: %d of %d", (i + 1), num_pages);
-		LOG_INF("\t\tOffset: 0x%x", page_offset);
+		printk("BL PAGE %u/%u offset=0x%08X\n", i + 1, num_pages, page_offset);
 		status = max32664c_bl_write_page(dev, firmware, page_offset);
-		LOG_INF("\t\tStatus: %u", status);
+		printk("BL PAGE %u status=0x%02X\n", i + 1, status);
+
 		if (status != 0) {
-			return -EINVAL;
+			return status;
 		}
 
 		page_offset += MAX32664C_FW_UPDATE_WRITE_SIZE;
 	}
 
-	LOG_INF("\tSuccessful!");
-
-	return max32664c_bl_leave(dev);
+	printk("BL STEP leave_bootloader\n");
+	err = max32664c_bl_leave(dev);
+	printk("BL STEP leave_bootloader -> %d\n", err);
+	return err;
 }
 
 int max32664c_bl_enter(const struct device *dev, const uint8_t *firmware, uint32_t size)
@@ -331,53 +346,84 @@ int max32664c_bl_enter(const struct device *dev, const uint8_t *firmware, uint32
 
 int max32664c_bl_leave(const struct device *dev)
 {
-	uint8_t hub_ver[3];
-	uint8_t rx_buf[4] = {0};
-	const struct max32664c_config *config = dev->config;
+    uint8_t hub_ver[3];
+    uint8_t rx_buf[4] = {0};
+    const struct max32664c_config *config = dev->config;
 
-	gpio_pin_configure_dt(&config->reset_gpio, GPIO_OUTPUT);
-	gpio_pin_configure_dt(&config->mfio_gpio, GPIO_OUTPUT);
+    gpio_pin_configure_dt(&config->reset_gpio, GPIO_OUTPUT);
+    gpio_pin_configure_dt(&config->mfio_gpio, GPIO_OUTPUT);
 
-	LOG_INF("Entering app mode");
-	gpio_pin_set_dt(&config->reset_gpio, true);
-	gpio_pin_set_dt(&config->mfio_gpio, false);
-	k_msleep(2000);
+    /* Clean app-mode entry sequence */
+    gpio_pin_set_dt(&config->reset_gpio, false);   // RSTN low
+    k_msleep(20);
 
-	gpio_pin_set_dt(&config->reset_gpio, false);
-	k_msleep(5);
+    gpio_pin_set_dt(&config->mfio_gpio, true);     // MFIO high
+    k_msleep(2);                                   // >1 ms before reset release
 
-	gpio_pin_set_dt(&config->mfio_gpio, true);
-	k_msleep(15);
+    gpio_pin_set_dt(&config->reset_gpio, true);    // RSTN high
+    k_msleep(1700);                                // wait for app startup
 
-	gpio_pin_set_dt(&config->reset_gpio, true);
-	k_msleep(1700);
+    if (max32664c_app_i2c_read(dev, 0x02, 0x00, rx_buf, 2)) {
+        printk("APP mode read failed\n");
+        return -EINVAL;
+    }
 
-	/* Read the device mode */
-	if (max32664c_app_i2c_read(dev, 0x02, 0x00, rx_buf, 2)) {
-		return -EINVAL;
-	}
+    printk("APP mode = 0x%02X\n", rx_buf[1]);
+    if (rx_buf[1] != 0x00) {
+        printk("Device not in application mode\n");
+        return -EINVAL;
+    }
 
-	LOG_DBG("Mode: %x ", rx_buf[1]);
-	if (rx_buf[1] != 0) {
-		LOG_ERR("Device not in application mode!");
-		return -EINVAL;
-	}
+    if (max32664c_app_i2c_read(dev, 0xFF, 0x03, rx_buf, 4)) {
+        printk("FW version read failed\n");
+        return -EINVAL;
+    }
 
-	/* Read the MCU type */
-	if (max32664c_app_i2c_read(dev, 0xFF, 0x00, rx_buf, 2)) {
-		return -EINVAL;
-	}
+    memcpy(hub_ver, &rx_buf[1], 3);
+    printk("FW version: %u.%u.%u\n", hub_ver[0], hub_ver[1], hub_ver[2]);
 
-	LOG_INF("MCU type: %u", rx_buf[1]);
+    return 0;
+}
 
-	/* Read the firmware version */
-	if (max32664c_app_i2c_read(dev, 0xFF, 0x03, rx_buf, 4)) {
-		return -EINVAL;
-	}
+int max32664c_bl_resume(const struct device *dev, const uint8_t *firmware, uint32_t size)
+{
+    uint8_t rx_buf[4] = {0};
+    uint8_t tx_buf[2];
 
-	memcpy(hub_ver, &rx_buf[1], 3);
+    /* Confirm current mode */
+    tx_buf[0] = 0x02;
+    tx_buf[1] = 0x00;
+    if (max32664c_bl_i2c_transmit(dev, tx_buf, 2, rx_buf, 2)) {
+        printk("BL: mode read failed\n");
+        return -EINVAL;
+    }
 
-	LOG_INF("Version: %d.%d.%d", hub_ver[0], hub_ver[1], hub_ver[2]);
+    printk("BL: current mode = 0x%02X\n", rx_buf[1]);
 
-	return 0;
+    if (rx_buf[1] != 0x08) {
+        printk("BL: not in bootloader mode\n");
+        return -EINVAL;
+    }
+
+    /* Read bootloader information */
+    tx_buf[0] = 0x81;
+    tx_buf[1] = 0x00;
+    if (max32664c_bl_i2c_transmit(dev, tx_buf, 2, rx_buf, 4)) {
+        printk("BL: bootloader info read failed\n");
+        return -EINVAL;
+    }
+
+    printk("BL: version %u.%u.%u\n", rx_buf[1], rx_buf[2], rx_buf[3]);
+
+    /* Read bootloader page size */
+    tx_buf[0] = 0x81;
+    tx_buf[1] = 0x01;
+    if (max32664c_bl_i2c_transmit(dev, tx_buf, 2, rx_buf, 3)) {
+        printk("BL: page size read failed\n");
+        return -EINVAL;
+    }
+
+    printk("BL: page size %u\n", ((uint16_t)rx_buf[1] << 8) | rx_buf[2]);
+
+    return max32664c_bl_load_fw(dev, firmware, size);
 }

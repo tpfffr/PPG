@@ -135,23 +135,23 @@ static int max32664c_check_sensors(const struct device *dev)
 
 	LOG_DBG("\tAFE WHOAMI OK: 0x%X", data->afe_id);
 
-	/* Read Accelerometer WHOAMI */
-	tx[0] = 0x41;
-	tx[1] = 0x04;
-	tx[2] = 0x0F;
-	if (max32664c_i2c_transmit(dev, tx, 3, rx, 2, MAX32664C_DEFAULT_CMD_DELAY)) {
-		return -EINVAL;
-	}
+	// /* Read Accelerometer WHOAMI */
+	// tx[0] = 0x41;
+	// tx[1] = 0x04;
+	// tx[2] = 0x0F;
+	// if (max32664c_i2c_transmit(dev, tx, 3, rx, 2, MAX32664C_DEFAULT_CMD_DELAY)) {
+	// 	return -EINVAL;
+	// }
 
-	data->accel_id = rx[1];
+	// data->accel_id = rx[1];
 	/* The sensor hub firmware supports only two accelerometers and one is set to */
 	/* EoL. The remaining one is the ST LIS2DS12. */
-	if (data->accel_id != 0x43) {
-		LOG_ERR("\tAccelerometer WHOAMI failed: 0x%X", data->accel_id);
-		// return -ENODEV;
-	}
+	// if (data->accel_id != 0x43) {
+	// 	LOG_ERR("\tAccelerometer WHOAMI failed: 0x%X", data->accel_id);
+	// 	// return -ENODEV;
+	// }
 
-	LOG_DBG("\tAccelerometer WHOAMI OK: 0x%X", data->accel_id);
+	// LOG_DBG("\tAccelerometer WHOAMI OK: 0x%X", data->accel_id);
 
 	return 0;
 }
@@ -177,9 +177,15 @@ static int max32664c_stop_algo(const struct device *dev)
 	tx[0] = 0x52;
 	tx[1] = 0x07;
 	tx[2] = 0x00;
-	if (max32664c_i2c_transmit(dev, tx, 3, &rx, 1, 120)) {
-		return -EINVAL;
-	}
+	int err = max32664c_i2c_transmit(dev, tx, 3, &rx, 1, 120);
+	printk("-> Stop Algo *Old* Command sent with err=%d rx=0x%02X\n", err, rx);
+
+	/* Stop the algorithm */
+	tx[0] = 0x44;
+	tx[1] = 0x07;
+	tx[2] = 0x00;
+	err = max32664c_i2c_transmit(dev, tx, 3, &rx, 1, 120);
+	printk("-> Stop Algo New Command sent with err=%d rx=0x%02X\n", err, rx);
 
 	switch (data->op_mode) {
 	case MAX32664C_OP_MODE_RAW: {
@@ -241,8 +247,6 @@ int max32664c_set_mode_raw(const struct device *dev)
 		return -EINVAL;
 	}
 
-
-
 	LOG_INF("Entering RAW mode...");
 	/* Set the output format to sensor data only */
 	printk("-> RAW Mode Check 2: Setting output format...\n");
@@ -272,32 +276,15 @@ int max32664c_set_mode_raw(const struct device *dev)
 		return -EINVAL;
 	}
 
-	printk("-> RAW Mode Check 4: Bypassing Accelerometer...\n");
-	/* Enable the accelerometer */
-	// if (max32664c_acc_enable(dev, true)) {
-	// 	return -EINVAL;
-	// }
-
-	/* Set AFE sample rate to 100 Hz */
-	// printk("-> RAW Mode Check 5: Setting AFE Sample Rate...\n");
-	// tx[0] = 0x40;
-	// tx[1] = 0x00;
-	// tx[2] = 0x12;
-	// tx[3] = 0x2A;
-	// if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
-	// 	return -EINVAL;
-	// }
-	// uint8_t reg12 = (0x0F << 3) | 0x00;   // 200 sps, no averaging
-	// uint8_t reg12 = (0x03 << 3) | 0x00;
-
-	// printk("-> RAW Mode Check 5: Setting AFE Sample Rate reg 0x12 = 0x%02X...\n", reg12);
-	// tx[0] = 0x40;
-	// tx[1] = 0x00;
-	// tx[2] = 0x12;
-	// tx[3] = reg12;
-	// if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
-	// 	return -EINVAL;
-	// }
+	/* Set AFE sample rate to 200 Hz with 4-sample averaging */
+	printk("-> RAW Mode Check 5: Setting AFE Sample Rate reg 0x12 = 0x22...\n");
+	tx[0] = 0x40;
+	tx[1] = 0x00;
+	tx[2] = 0x12;
+	tx[3] = 0x22;
+	if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
+		return -EINVAL;
+	}
 
 	/* Set the LED current */
 	printk("-> RAW Mode Check 6: Setting LED currents...\n");
@@ -321,11 +308,7 @@ int max32664c_set_mode_raw(const struct device *dev)
 	/* Tell AFE: Time Slot 1 = LED1 (Green), Time Slot 2 = LED2 (IR) */
 	tx[0] = 0x40; tx[1] = 0x00; tx[2] = 0x20; tx[3] = 0x21;
 	max32664c_i2c_transmit(dev, tx, 4, &rx, 1, 2);
-
-	// uint8_t tx_pd[] = {0x40, 0x00, 0x10, 0x02};
-	// max32664c_i2c_transmit(dev, tx_pd, 4, &rx, 1, 10);
-
-	/* Tell AFE: Time Slot 3 = LED3 (Red), Time Slot 4 = None */
+	/* Tell AFE: Time Slot 3 = LED1 (Green), Time Slot 4 = LED2 (IR) */
 	tx[0] = 0x40; tx[1] = 0x00; tx[2] = 0x21; tx[3] = 0x03;
 	max32664c_i2c_transmit(dev, tx, 4, &rx, 1, 2);
 
@@ -670,47 +653,27 @@ static int max32664c_exit_mode_wake_on_motion(const struct device *dev)
 
 static int max32664c_disable_sensors(const struct device *dev)
 {
-	uint8_t rx;
-	uint8_t tx[4];
+
 	struct max32664c_data *data = dev->data;
 
-	if (max32664c_stop_algo(dev)) {
-		LOG_ERR("Failed to stop the algorithm!");
-		return -EINVAL;
-	}
+	int err = max32664c_acc_enable(dev, false);
+	printk("ACC disable err=%d\n", err);
 
-	/* Leave wake on motion first because we disable the accelerometer */
-	// if (max32664c_exit_mode_wake_on_motion(dev)) {
-	// 	LOG_ERR("Failed to exit wake on motion mode!");
-	// 	return -EINVAL;
-	// }
+	err = max32664c_stop_algo(dev);
+	printk("-> IDLE Mode: Stopped algorithm with err=%d\n", err);
+	k_msleep(20);
 
-	LOG_DBG("Disable the sensors...");
-
-	/* --- INJECT THIS NEW BLOCK --- */
-	printk("-> IDLE Mode: Turning off AFE LEDs...\n");
-	/* Tell AFE: Clear Time Slot 1 & 2 (0x00 = Disabled) */
-	tx[0] = 0x40; tx[1] = 0x00; tx[2] = 0x20; tx[3] = 0x00;
-	max32664c_i2c_transmit(dev, tx, 4, &rx, 1, 10);
-
-	/* Tell AFE: Clear Time Slot 3 & 4 (0x00 = Disabled) */
-	tx[0] = 0x40; tx[1] = 0x00; tx[2] = 0x21; tx[3] = 0x00;
-	max32664c_i2c_transmit(dev, tx, 4, &rx, 1, 10);
-	/* ----------------------------- */
-
-	/* Disable the AFE (Hub's internal command) */
-	tx[0] = 0x44;
+	// /* Disable MAX86141 AFE */
+	uint8_t rx;
+	uint8_t tx[4];
+	tx[0] = 0x40;
 	tx[1] = 0x00;
-	tx[2] = 0x00;
-	tx[3] = 0x00;
-	if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, 250)) {
-		return -EINVAL;
-	}
+	tx[2] = 0x0D;
+	tx[3] = 0x02;
+	err = max32664c_i2c_transmit(dev, tx, sizeof(tx), &rx, 1, 10);
+	printk("AFE shutdown err=%d rx=0x%02X\n", err, rx);
 
-	/* Disable the accelerometer */
-	// if (max32664c_acc_enable(dev, false)) {
-	// 	return -EINVAL;
-	// }
+	k_msleep(20);
 
 	data->op_mode = MAX32664C_OP_MODE_IDLE;
 
@@ -780,6 +743,10 @@ static int max32664c_channel_get(const struct device *dev, enum sensor_channel c
 		val->val1 = data->raw.PPG3;
 		break;
 	}
+	// case SENSOR_CHAN_GREEN2: {
+	// 	val->val1 = data->raw.PPG4;
+	// 	break;
+	// }
 	case SENSOR_CHAN_MAX32664C_HEARTRATE: {
 #ifdef CONFIG_MAX32664C_USE_EXTENDED_REPORTS
 		val->val1 = data->ext.hr;
@@ -934,6 +901,10 @@ static int max32664c_attr_set(const struct device *dev, enum sensor_channel chan
 			data->led_current[2] = val->val1 & 0xFF;
 			break;
 		}
+		// case SENSOR_CHAN_GREEN2: {
+		// 	data->led_current[3] = val->val1 & 0xFF;
+		// 	break;
+		// }
 		default: {
 			LOG_ERR("Channel %u not supported for setting attribute!", (int)chan);
 			return -ENOTSUP;
@@ -1000,6 +971,7 @@ static int max32664c_attr_set(const struct device *dev, enum sensor_channel chan
 			break;
 		}
 		case MAX32664C_OP_MODE_IDLE: {
+			printk("-> IDLE Mode: Disabling sensors and stopping algorithms...\n");
 			err = max32664c_disable_sensors(dev);
 			break;
 		}
@@ -1045,6 +1017,7 @@ static int max32664c_attr_get(const struct device *dev, enum sensor_channel chan
 			val->val1 = data->led_current[2];
 			break;
 		}
+
 		default: {
 			LOG_ERR("Channel %u not supported for getting attribute!", (int)chan);
 			return -ENOTSUP;
@@ -1068,8 +1041,9 @@ static DEVICE_API(sensor, max32664c_driver_api) = {
 	.channel_get = max32664c_channel_get,
 };
 
-static int max32664c_init(const struct device *dev)
+int max32664c_init(const struct device *dev)
 {
+	int err;
 	uint8_t tx[2];
 	uint8_t rx[4];
 	const struct max32664c_config *config = dev->config;
@@ -1084,27 +1058,26 @@ static int max32664c_init(const struct device *dev)
 	gpio_pin_configure_dt(&config->mfio_gpio, GPIO_OUTPUT);
 
 	/* Put the hub into application mode */
-	LOG_DBG("Set app mode");
+	printk("Set app mode");
 	gpio_pin_set_dt(&config->reset_gpio, false);
-	k_msleep(20);
+	k_msleep(30);
 
 	gpio_pin_set_dt(&config->mfio_gpio, true);
-	k_msleep(20);
+	k_msleep(30);
 
 	/* Wait for 50 ms (switch into app mode) + 1500 ms (initialization) */
 	/* (see page 17 of the User Guide) */
 	gpio_pin_set_dt(&config->reset_gpio, true);
-	k_msleep(1600);
+	k_msleep(1700);
 
 	/* Read the device mode */
 	tx[0] = 0x02;
 	tx[1] = 0x00;
-	if (max32664c_i2c_transmit(dev, tx, 2, rx, 2, MAX32664C_DEFAULT_CMD_DELAY)) {
-		return -EINVAL;
-	}
+	err = max32664c_i2c_transmit(dev, tx, 2, rx, 2, MAX32664C_DEFAULT_CMD_DELAY);
+	printk("Read device mode with err=%d\n", err);
 
 	data->op_mode = rx[1];
-	LOG_DBG("Mode: %x ", data->op_mode);
+	printk("Mode: %x ", data->op_mode);
 	if (data->op_mode != 0) {
 		return -EINVAL;
 	}
@@ -1112,33 +1085,24 @@ static int max32664c_init(const struct device *dev)
 	/* Read the firmware version */
 	tx[0] = 0xFF;
 	tx[1] = 0x03;
-	if (max32664c_i2c_transmit(dev, tx, 2, rx, 4, MAX32664C_DEFAULT_CMD_DELAY)) {
-		return -EINVAL;
-	}
+	err = max32664c_i2c_transmit(dev, tx, 2, rx, 4, MAX32664C_DEFAULT_CMD_DELAY);
+	printk("Read firmware version with err=%d\n", err);
 
 	memcpy(data->hub_ver, &rx[1], 3);
 
 	/* ADD THIS PRINTK: Let's see what chip this really is! */
 	printk("\n>>> HUB FIRMWARE VERSION: %d.%d.%d <<<\n", data->hub_ver[0], data->hub_ver[1], data->hub_ver[2]);
 
-	LOG_DBG("Version: %d.%d.%d", data->hub_ver[0], data->hub_ver[1], data->hub_ver[2]);
+	printk("Version: %d.%d.%d", data->hub_ver[0], data->hub_ver[1], data->hub_ver[2]);
 
-	if (max32664c_check_sensors(dev)) {
-		return -EINVAL;
-	}
+	err = max32664c_check_sensors(dev);
+	printk("Check sensors with err=%d\n", err);
 
-	if (max32664c_init_hub(dev)) {
-		return -EINVAL;
-	}
+	printk("Init hub...");
 
+	err = max32664c_init_hub(dev);
+	printk("Init hub with err=%d\n", err);
 
-
-	// #ifdef CONFIG_MAX32664C_USE_INTERRUPT
-	// if (max32664c_init_interrupt(dev)) {
-	// 	LOG_ERR("Failed to initialize interrupt mode");
-	// 	return -EINVAL;
-	// }
-	// #endif
 
 #ifdef CONFIG_MAX32664C_USE_STATIC_MEMORY
 	k_msgq_init(&data->raw_report_queue, data->raw_report_queue_buffer,
@@ -1164,7 +1128,7 @@ static int max32664c_init(const struct device *dev)
 }
 
 #ifdef CONFIG_PM_DEVICE
-static int max32664c_pm_action(const struct device *dev, enum pm_device_action action)
+int max32664c_pm_action(const struct device *dev, enum pm_device_action action)
 {
 	switch (action) {
 	case PM_DEVICE_ACTION_RESUME: {

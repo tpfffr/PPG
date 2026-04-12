@@ -41,7 +41,7 @@
         group1 {
             psels = <NRF_PSEL(TWIM_SDA, 0, 30)>,
                     <NRF_PSEL(TWIM_SCL, 0, 28)>;
-            bias-pull-up;
+            // bias-pull-up;
         };
     };
 
@@ -60,7 +60,7 @@
     pinctrl-0 = <&i2c1_default>;
     pinctrl-1 = <&i2c1_sleep>;
     pinctrl-names = "default", "sleep";
-    clock-frequency = <100000>;
+    clock-frequency = <400000>;
 
 
     max32664: max32664@55 {
@@ -70,10 +70,10 @@
 
         reset-gpios = <&gpio1 13 GPIO_ACTIVE_HIGH>;
         mfio-gpios = <&gpio0 3 GPIO_ACTIVE_HIGH>;
-        int-gpios  = <&gpio0 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+        int-gpios  = <&gpio0 4 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 
         use-max86141;
-        report-period = <100>;
+        report-period = <1>;
 
         led-current = <20 20 20>;
         spo2-calib = <15958422 1847171 (-10546543)>;

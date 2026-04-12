@@ -304,24 +304,24 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
         break;
     }
 
-    case 3: { // delivered rate selector
-        static const uint8_t delivered_to_afe_sr_map[] = { 0x01, 0x03, 0x04, 0x05, 0x06 };
+	case 3: { // delivered rate selector
+		static const uint8_t delivered_to_afe_sr_map[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
 
-        if (value >= ARRAY_SIZE(delivered_to_afe_sr_map)) {
-            printk("BLE: invalid rate idx=%u\n", value);
-            break;
-        }
+		if (value >= ARRAY_SIZE(delivered_to_afe_sr_map)) {
+			printk("BLE: invalid rate idx=%u\n", value);
+			break;
+		}
 
-        current_ppg_sr_code = delivered_to_afe_sr_map[value];
-        uint8_t reg12 = make_reg12(current_ppg_sr_code, current_smp_ave_code);
+		current_ppg_sr_code = delivered_to_afe_sr_map[value];
+		uint8_t reg12 = make_reg12(current_ppg_sr_code, current_smp_ave_code);
 
 		// int err = afe_write_reg(max32664_dev, 0x12, 0x20);
 
-        int err = afe_write_reg(max32664_dev, 0x12, reg12);
-        printk("BLE: Set delivered-rate idx=%u -> reg 0x12 = 0x%02X err=%d\n",
-               value, reg12, err);
-        break;
-    }
+		int err = afe_write_reg(max32664_dev, 0x12, reg12);
+		printk("BLE: Set delivered-rate idx=%u -> reg 0x12 = 0x%02X err=%d\n",
+				value, reg12, err);
+		break;
+	}
 
     case 4: { // averaging
         current_smp_ave_code = value & 0x07;
@@ -334,7 +334,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
     }
     }
 
-    k_msleep(20);
+    k_msleep(50);
     sensor_busy_updating = false;
     return len;
 }

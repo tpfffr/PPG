@@ -204,17 +204,11 @@ int max32664c_init_hub(const struct device *dev)
 
 	LOG_DBG("Initialize sensor hub");
 
-	// if (max32664c_write_config(dev)) {
-	// 	LOG_ERR("Can not write default configuration!");
-	// 	return -EINVAL;
-	// }
+	int err = max32664c_write_config(dev);
+	printk("-> Write Config returned err=%d\n", err);
 
-	// if (max32664c_read_config(dev)) {
-	// 	LOG_ERR("Can not read configuration!");
-	// 	return -EINVAL;
-	// }
-
-	printk("TEST MODE: skipping hub default config/write/read\n");
+	err = max32664c_read_config(dev);
+	printk("-> Read Config returned err=%d\n", err);
 
 	data->is_thread_running = true;
 	data->thread_id = k_thread_create(&data->thread, data->thread_stack,
@@ -224,25 +218,25 @@ int max32664c_init_hub(const struct device *dev)
 	k_thread_suspend(data->thread_id);
 	k_thread_name_set(data->thread_id, "max32664c_worker");
 
-	LOG_DBG("Initial configuration:");
+	printk("Initial configuration:");
 
 #ifndef CONFIG_MAX32664C_USE_STATIC_MEMORY
-	LOG_DBG("\tUsing dynamic memory for queues and buffers");
+	printk("\tUsing dynamic memory for queues and buffers");
 #else
-	LOG_DBG("\tUsing static memory for queues and buffers");
+	printk("\tUsing static memory for queues and buffers");
 #endif /* CONFIG_MAX32664C_USE_STATIC_MEMORY */
 
 #ifdef CONFIG_MAX32664C_USE_EXTENDED_REPORTS
-	LOG_DBG("\tUsing extended reports");
+	printk("\tUsing extended reports");
 #else
-	LOG_DBG("\tUsing normal reports");
+	printk("\tUsing normal reports");
 #endif /* CONFIG_MAX32664C_USE_EXTENDED_REPORTS*/
 
-	LOG_DBG("\tReport period: %u", data->report_period);
-	LOG_DBG("\tMinimum integration time: %u", data->min_integration_time_idx);
-	LOG_DBG("\tMinimum sampling rate: %u", data->min_sampling_rate_idx);
-	LOG_DBG("\tMaximum integration time: %u", data->max_integration_time_idx);
-	LOG_DBG("\tMaximum sampling rate: %u", data->max_sampling_rate_idx);
+	printk("\tReport period: %u", data->report_period);
+	printk("\tMinimum integration time: %u", data->min_integration_time_idx);
+	printk("\tMinimum sampling rate: %u", data->min_sampling_rate_idx);
+	printk("\tMaximum integration time: %u", data->max_integration_time_idx);
+	printk("\tMaximum sampling rate: %u", data->max_sampling_rate_idx);
 
 	return 0;
 }
