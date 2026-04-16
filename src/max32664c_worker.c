@@ -83,14 +83,9 @@ static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf
 	report.PPG1 = (((uint32_t)buf_ptr[0] << 16) | ((uint32_t)buf_ptr[1] << 8) | buf_ptr[2]) & 0x07FFFF;
 	report.PPG2 = (((uint32_t)buf_ptr[3] << 16) | ((uint32_t)buf_ptr[4] << 8) | buf_ptr[5]) & 0x07FFFF;
 	report.PPG3 = (((uint32_t)buf_ptr[6] << 16) | ((uint32_t)buf_ptr[7] << 8) | buf_ptr[8]) & 0x07FFFF;
-	report.PPG4 = 0;//(((uint32_t)buf_ptr[9] << 16) | ((uint32_t)buf_ptr[10] << 8) | buf_ptr[11]) & 0x07FFFF;
+	report.PPG4 = 0;
     report.PPG5 = 0;
     report.PPG6 = 0;
-
-	// /* Even if we do not use the accelerometer, we need to parse it to empty the buffer */
-    // report.acc.x = ((int16_t)buf_ptr[18] << 8) | buf_ptr[19];
-    // report.acc.y = ((int16_t)buf_ptr[20] << 8) | buf_ptr[21];
-    // report.acc.z = ((int16_t)buf_ptr[22] << 8) | buf_ptr[23];
 
 	max32664c_push_to_queue(&data->raw_report_queue, &report);
 }
@@ -113,11 +108,12 @@ static void max32664c_parse_and_push_raw(const struct device *dev)
 		       ((uint32_t)(data->max32664_i2c_buffer[8]) << 8) |
 		       data->max32664_i2c_buffer[9];
 
-	report.PPG4 = 0; /*((uint32_t)(data->max32664_i2c_buffer[10]) << 16) |
+	report.PPG4 = ((uint32_t)(data->max32664_i2c_buffer[10]) << 16) |
 		       ((uint32_t)(data->max32664_i2c_buffer[11]) << 8) |
-		       data->max32664_i2c_buffer[12]; */
+		       data->max32664_i2c_buffer[12];
 
 	/* PPG4 to 6 are used for PD2 */
+	// report.PPG4 = 0;
 	report.PPG5 = 0;
 	report.PPG6 = 0;
 
@@ -273,12 +269,6 @@ void max32664c_worker(const struct device *dev)
 	LOG_DBG("Starting worker thread for device: %s", dev->name);
 
 	while (data->is_thread_running) {
-
-		if (data->op_mode == MAX32664C_OP_MODE_IDLE) {
-			printk("Device is idle, sleeping for 1 second...\n");
-			k_msleep(1000); // Sleep much longer when idle
-			continue;
-		}
 		if (sensor_busy_updating) {
             k_msleep(20);
             continue;
@@ -432,6 +422,7 @@ void max32664c_worker(const struct device *dev)
 			fifo_max_this_sec = 0;
 			stat_t0 = k_uptime_get();
 		}
+
 		k_msleep(1);
 	}
 }

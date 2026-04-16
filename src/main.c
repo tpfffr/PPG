@@ -86,8 +86,10 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err) {
 
     k_msleep(20);
 
-    err = pm_device_runtime_get(max32664_dev);
-    k_msleep(20);
+    // err = pm_device_runtime_get(max32664_dev);
+    // k_msleep(20);
+
+    printk("Runtime PM get err=%d\n", err);
 
     // err = max32664c_init(max32664_dev);
     // printk("MAX32664 initialization err=%d\n", err);
@@ -100,12 +102,14 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err) {
 
     struct sensor_value green_curr = { .val1 = 15};
     sensor_attr_set(max32664_dev, SENSOR_CHAN_GREEN, SENSOR_ATTR_CONFIGURATION, &green_curr);
-    max32664c_set_mode_raw(max32664_dev);
+    err = max32664c_set_mode_raw(max32664_dev);
+    printk("Set raw mode err=%d\n", err);
+
 }
 
 void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
 {
-    int err;
+    // int err;
 
     struct sensor_value val = { .val1 = MAX32664C_OP_MODE_IDLE };
     sensor_attr_set(max32664_dev, SENSOR_CHAN_ALL, SENSOR_ATTR_MAX32664C_OP_MODE, &val);
@@ -115,8 +119,8 @@ void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
     gpio_pin_set(gpio1_dev, MAX32664_RSTN_PIN, 1);
     gpio_pin_set(gpio0_dev, MAX32664_MFIO_PIN, 1);
 
-    err = pm_device_runtime_put(max32664_dev);
-    printk("Runtime PM put err=%d\n", err);
+    // err = pm_device_runtime_put(max32664_dev);
+    // printk("Runtime PM put err=%d\n", err);
 
     k_msleep(20);
 
@@ -150,24 +154,24 @@ int main(void) {
     bt_conn_cb_register(&connection_callbacks);
     ble_init();
     printk("Advertising started. Waiting for connection...\n");
+    k_msleep(100);
 
     struct sensor_value green;
-    struct sensor_value ir;
     uint32_t battery_mv = 0;
     uint64_t now = k_uptime_get();
 
     static int low_batt_count = 0;
 
-    battery_mv = read_battery_mv();
+    battery_mv = read_battery_mv() + 200;
 
     while (1) {
 
         if (k_uptime_get() - now >= 1800000) {
 
-            battery_mv = read_battery_mv();
+            battery_mv = read_battery_mv() + 200;
             now = k_uptime_get();
 
-            if (battery_mv > 0 && battery_mv < 3550) {
+            if (battery_mv > 0 && battery_mv < 3150) {
                 low_batt_count++;
             } else {
                 low_batt_count = 0;
@@ -181,7 +185,11 @@ int main(void) {
         }
 
         if (!ble_is_ready()) {
-            k_sem_take(&ble_ready_sem, K_FOREVER);
+            // k_sem_take(&ble_ready_sem, K_FOREVER);
+
+            // sleep 30s
+            k_sem_take(&ble_ready_sem, K_SECONDS(30));
+            printk("Woke up from sleep, checking BLE connection...\n");
             continue;
         }
 
@@ -198,7 +206,7 @@ int main(void) {
                 batch[count].resp = battery_mv;
                 count++;
 
-                // printk("Fetched sample: ECG=%d RESP=%d\n", green.val1, ir.val1);
+                // printk("Fetched sample: ECG=%d RESP=%d\n", green.val1);
 
                 if (count >= PACKET_LEN) {
                     int err = ble_send_sensor_data(batch, sizeof(batch));
