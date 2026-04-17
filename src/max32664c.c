@@ -736,7 +736,7 @@ static int max32664c_channel_get(const struct device *dev, enum sensor_channel c
 		break;
 	}
 	case SENSOR_CHAN_IR: {
-		val->val1 = data->raw.PPG2;
+		val->val1 = data->raw.PPG4;
 		break;
 	}
 	case SENSOR_CHAN_RED: {

@@ -13,6 +13,13 @@
 
 extern volatile bool sensor_busy_updating;
 
+static uint32_t raw_queue_full_events;
+static uint32_t raw_queue_purge_events;
+static uint32_t fifo_too_large_events;
+static uint32_t status_in_overflow_events;
+static uint32_t status_out_overflow_events;
+static int64_t raw_queue_last_full_log_ms;
+
 
 LOG_MODULE_REGISTER(maxim_max32664c_worker, CONFIG_SENSOR_LOG_LEVEL);
 
@@ -68,6 +75,16 @@ static int max32664c_get_fifo_count(const struct device *dev, uint8_t *fifo)
 static void max32664c_push_to_queue(struct k_msgq *msgq, const void *data)
 {
 	while (k_msgq_put(msgq, data, K_NO_WAIT) != 0) {
+		raw_queue_full_events++;
+		raw_queue_purge_events++;
+		if (k_uptime_get() - raw_queue_last_full_log_ms >= 500) {
+			printk("MAX32664 raw queue full: used=%u free=%u full_events=%u purges=%u\n",
+			       k_msgq_num_used_get(msgq),
+			       k_msgq_num_free_get(msgq),
+			       raw_queue_full_events,
+			       raw_queue_purge_events);
+			raw_queue_last_full_log_ms = k_uptime_get();
+		}
 		k_msgq_purge(msgq);
 	}
 }
@@ -83,7 +100,7 @@ static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf
 	report.PPG1 = (((uint32_t)buf_ptr[0] << 16) | ((uint32_t)buf_ptr[1] << 8) | buf_ptr[2]) & 0x07FFFF;
 	report.PPG2 = (((uint32_t)buf_ptr[3] << 16) | ((uint32_t)buf_ptr[4] << 8) | buf_ptr[5]) & 0x07FFFF;
 	report.PPG3 = (((uint32_t)buf_ptr[6] << 16) | ((uint32_t)buf_ptr[7] << 8) | buf_ptr[8]) & 0x07FFFF;
-	report.PPG4 = 0;
+	report.PPG4 = 0; /* (((uint32_t)buf_ptr[9] << 16) | ((uint32_t)buf_ptr[10] << 8) | buf_ptr[11]) & 0x07FFFF; */
     report.PPG5 = 0;
     report.PPG6 = 0;
 
@@ -108,9 +125,9 @@ static void max32664c_parse_and_push_raw(const struct device *dev)
 		       ((uint32_t)(data->max32664_i2c_buffer[8]) << 8) |
 		       data->max32664_i2c_buffer[9];
 
-	report.PPG4 = ((uint32_t)(data->max32664_i2c_buffer[10]) << 16) |
+	report.PPG4 = 0; /*((uint32_t)(data->max32664_i2c_buffer[10]) << 16) |
 		       ((uint32_t)(data->max32664_i2c_buffer[11]) << 8) |
-		       data->max32664_i2c_buffer[12];
+		       data->max32664_i2c_buffer[12];*/
 
 	/* PPG4 to 6 are used for PD2 */
 	// report.PPG4 = 0;
@@ -263,6 +280,7 @@ void max32664c_worker(const struct device *dev)
 
 	uint32_t fifo_items_this_sec = 0;
 	uint32_t fifo_reads_this_sec = 0;
+	uint32_t raw_queue_max_used_this_sec = 0;
 	uint8_t fifo_max_this_sec = 0;
 	int64_t stat_t0 = k_uptime_get();
 
@@ -278,6 +296,14 @@ void max32664c_worker(const struct device *dev)
 			LOG_ERR("Failed to get hub status! Error: %d", err);
 			k_msleep(2);
 			continue;
+		}
+
+		if (status & BIT(MAX32664C_BIT_STATUS_IN_OVFL)) {
+			status_in_overflow_events++;
+		}
+
+		if (status & BIT(MAX32664C_BIT_STATUS_OUT_OVFL)) {
+			status_out_overflow_events++;
 		}
 
 		// if (!(status & (1 << MAX32664C_BIT_STATUS_DATA_RDY))) {
@@ -300,6 +326,7 @@ void max32664c_worker(const struct device *dev)
 		}
 #ifdef CONFIG_MAX32664C_USE_STATIC_MEMORY
 		else if (fifo > CONFIG_MAX32664C_SAMPLE_BUFFER_SIZE) {
+			fifo_too_large_events++;
 			LOG_ERR("FIFO count %u exceeds maximum buffer size %u!",
 				fifo, CONFIG_MAX32664C_SAMPLE_BUFFER_SIZE);
 
@@ -413,12 +440,28 @@ void max32664c_worker(const struct device *dev)
 		k_free(data->max32664_i2c_buffer);
 #endif /* CONFIG_MAX32664C_USE_STATIC_MEMORY */
 
+		if (k_msgq_num_used_get(&data->raw_report_queue) > raw_queue_max_used_this_sec) {
+			raw_queue_max_used_this_sec = k_msgq_num_used_get(&data->raw_report_queue);
+		}
+
 		if (k_uptime_get() - stat_t0 >= 1000) {
-			printk("WORKER: fifo_reads=%u fifo_items=%u fifo_max=%u op_mode=%d\n",
-				fifo_reads_this_sec, fifo_items_this_sec, fifo_max_this_sec, data->op_mode);
+			printk("WORKER: fifo_reads=%u fifo_items=%u fifo_max=%u raw_q_used=%u raw_q_free=%u raw_q_max=%u raw_q_full=%u purges=%u fifo_oversize=%u in_ovfl=%u out_ovfl=%u op_mode=%d\n",
+			       fifo_reads_this_sec,
+			       fifo_items_this_sec,
+			       fifo_max_this_sec,
+			       k_msgq_num_used_get(&data->raw_report_queue),
+			       k_msgq_num_free_get(&data->raw_report_queue),
+			       raw_queue_max_used_this_sec,
+			       raw_queue_full_events,
+			       raw_queue_purge_events,
+			       fifo_too_large_events,
+			       status_in_overflow_events,
+			       status_out_overflow_events,
+			       data->op_mode);
 
 			fifo_items_this_sec = 0;
 			fifo_reads_this_sec = 0;
+			raw_queue_max_used_this_sec = 0;
 			fifo_max_this_sec = 0;
 			stat_t0 = k_uptime_get();
 		}

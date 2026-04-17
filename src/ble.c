@@ -10,6 +10,14 @@
 #include "max32664c.h"
 #include "max32664c_api.h"
 
+#define CTRL_CMD_LED_CURRENT       0U
+#define CTRL_CMD_ADC_RANGE         1U
+#define CTRL_CMD_INTEGRATION_TIME  2U
+#define CTRL_CMD_DELIVERED_RATE    3U
+#define CTRL_CMD_AVERAGING         4U
+#define CTRL_CMD_SESSION_START     5U
+#define CTRL_CMD_SESSION_STOP      6U
+
 /* Nordic UART Service (NUS) UUIDs */
 #define NUS_SVC_UUID BT_UUID_128_ENCODE(0x6e400001, 0xb5a3, 0xf393, 0xe0a9, 0xe50e24dcca9e)
 #define NUS_RX_UUID  BT_UUID_128_ENCODE(0x6e400002, 0xb5a3, 0xf393, 0xe0a9, 0xe50e24dcca9e) // Write
@@ -22,6 +30,8 @@ static struct bt_uuid_128 nus_rx  = BT_UUID_INIT_128(NUS_RX_UUID);
 extern const struct device *max32664_dev;
 extern const struct i2c_dt_spec max32664_i2c_spec;
 extern struct k_sem ble_ready_sem;
+extern int measurement_session_start(void);
+extern int measurement_session_stop(bool explicit_stop);
 
 volatile bool sensor_busy_updating = false;
 
@@ -228,12 +238,21 @@ int ble_send_sensor_data(const void *data, uint16_t len) {
         return -ENOTCONN;
     }
 	else {
-		return bt_gatt_notify(current_conn, &my_service.attrs[1], data, len);
+		return bt_gatt_notify(current_conn, &my_service.attrs[2], data, len);
 	}
 }
 
 bool ble_is_ready(void) {
     return (current_conn != NULL && notify_enabled);
+}
+
+int ble_disconnect_current(void)
+{
+    if (current_conn == NULL) {
+        return -ENOTCONN;
+    }
+
+    return bt_conn_disconnect(current_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 }
 
 static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr *attr,
@@ -249,14 +268,33 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
     uint8_t value      = data[1];
 
     switch (setting_id) {
-    case 0:
-    case 1:
-    case 2:
-    case 3:
-    case 4:
+    case CTRL_CMD_LED_CURRENT:
+    case CTRL_CMD_ADC_RANGE:
+    case CTRL_CMD_INTEGRATION_TIME:
+    case CTRL_CMD_DELIVERED_RATE:
+    case CTRL_CMD_AVERAGING:
+    case CTRL_CMD_SESSION_START:
+    case CTRL_CMD_SESSION_STOP:
         break;
     default:
         printk("Ignoring unknown setting ID: %u value=%u\n", setting_id, value);
+        return len;
+    }
+
+    if (setting_id == CTRL_CMD_SESSION_START) {
+        int err = measurement_session_start();
+        printk("BLE: start session err=%d\n", err);
+        return len;
+    }
+
+    if (setting_id == CTRL_CMD_SESSION_STOP) {
+        int err = measurement_session_stop(true);
+        printk("BLE: stop session err=%d\n", err);
+
+        err = ble_disconnect_current();
+        if (err && err != -ENOTCONN) {
+            printk("BLE: disconnect after stop err=%d\n", err);
+        }
         return len;
     }
 
@@ -266,7 +304,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
     printk("Received setting change request: ID=%u, Value=%u\n", setting_id, value);
 
     switch (setting_id) {
-    case 0: { // LED current
+    case CTRL_CMD_LED_CURRENT: { // LED current
         struct sensor_value val = { .val1 = value };
         sensor_attr_set(max32664_dev, SENSOR_CHAN_GREEN, SENSOR_ATTR_CONFIGURATION, &val);
 
@@ -275,7 +313,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
         break;
     }
 
-    case 1: { // ADC range / effective gain via reg 0x11[3:2]
+    case CTRL_CMD_ADC_RANGE: { // ADC range / effective gain via reg 0x11[3:2]
 		uint8_t r11;
 		int err = afe_read_reg(max32664_dev, 0x11, &r11);
 		if (err) {
@@ -291,7 +329,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
 		break;
 	}
 
-    case 2: { // integration time
+    case CTRL_CMD_INTEGRATION_TIME: { // integration time
         uint8_t r11;
         int err = afe_read_reg(max32664_dev, 0x11, &r11);
         if (!err) {
@@ -304,7 +342,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
         break;
     }
 
-	case 3: { // delivered rate selector
+	case CTRL_CMD_DELIVERED_RATE: { // delivered rate selector
 		static const uint8_t delivered_to_afe_sr_map[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
 
 		if (value >= ARRAY_SIZE(delivered_to_afe_sr_map)) {
@@ -323,7 +361,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
 		break;
 	}
 
-    case 4: { // averaging
+    case CTRL_CMD_AVERAGING: { // averaging
         current_smp_ave_code = value & 0x07;
         uint8_t reg12 = make_reg12(current_ppg_sr_code, current_smp_ave_code);
 

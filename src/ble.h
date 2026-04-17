@@ -8,5 +8,6 @@
 int ble_init(void);
 int ble_send_sensor_data(const void *data, uint16_t len);
 bool ble_is_ready(void);
+int ble_disconnect_current(void);
 
 #endif
