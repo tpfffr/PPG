@@ -17,6 +17,9 @@
 #define CTRL_CMD_AVERAGING         4U
 #define CTRL_CMD_SESSION_START     5U
 #define CTRL_CMD_SESSION_STOP      6U
+#define ADV_FAST_INTERVAL_MS       200U
+#define ADV_SLOW_INTERVAL_MS       1000U
+#define ADV_RECENT_CONN_WINDOW_MS  (30U * 60U * 1000U)
 
 /* Nordic UART Service (NUS) UUIDs */
 #define NUS_SVC_UUID BT_UUID_128_ENCODE(0x6e400001, 0xb5a3, 0xf393, 0xe0a9, 0xe50e24dcca9e)
@@ -26,6 +29,12 @@
 static struct bt_uuid_128 nus_svc = BT_UUID_INIT_128(NUS_SVC_UUID);
 static struct bt_uuid_128 nus_tx  = BT_UUID_INIT_128(NUS_TX_UUID);
 static struct bt_uuid_128 nus_rx  = BT_UUID_INIT_128(NUS_RX_UUID);
+
+static const struct bt_data adv_data[] = {
+	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME,
+		(sizeof(CONFIG_BT_DEVICE_NAME) - 1)),
+};
 
 extern const struct device *max32664_dev;
 extern const struct i2c_dt_spec max32664_i2c_spec;
@@ -106,21 +115,107 @@ BT_GATT_SERVICE_DEFINE(my_service,
 
 struct advertiser_info {
 	struct k_work work;
+	struct k_work_delayable interval_work;
 	struct bt_le_ext_adv *adv;
+	uint32_t current_interval_ms;
 };
 
 static struct advertiser_info singleton_adv;
+static int64_t last_connection_timestamp_ms = -1;
+
+static bool has_recent_connection(void)
+{
+	if (last_connection_timestamp_ms < 0) {
+		return false;
+	}
+
+	return (k_uptime_get() - last_connection_timestamp_ms) < ADV_RECENT_CONN_WINDOW_MS;
+}
+
+static uint32_t get_target_adv_interval_ms(void)
+{
+	return has_recent_connection() ? ADV_FAST_INTERVAL_MS : ADV_SLOW_INTERVAL_MS;
+}
+
+static struct bt_le_adv_param make_adv_param(uint32_t interval_ms)
+{
+	return (struct bt_le_adv_param)BT_LE_ADV_PARAM_INIT(
+		BT_LE_ADV_OPT_CONN,
+		BT_GAP_MS_TO_ADV_INTERVAL(interval_ms),
+		BT_GAP_MS_TO_ADV_INTERVAL(interval_ms),
+		NULL
+	);
+}
+
+static void schedule_interval_fallback(struct advertiser_info *info)
+{
+	int64_t remaining_ms;
+
+	if (!has_recent_connection()) {
+		k_work_cancel_delayable(&info->interval_work);
+		return;
+	}
+
+	remaining_ms = ADV_RECENT_CONN_WINDOW_MS - (k_uptime_get() - last_connection_timestamp_ms);
+	if (remaining_ms < 1) {
+		remaining_ms = 1;
+	}
+
+	k_work_reschedule(&info->interval_work, K_MSEC(remaining_ms));
+}
 
 static void start_connectable_advertiser(struct k_work *work)
 {
 	struct advertiser_info *info = CONTAINER_OF(work, struct advertiser_info, work);
+	struct bt_le_adv_param adv_param = make_adv_param(get_target_adv_interval_ms());
+	uint32_t target_interval_ms = get_target_adv_interval_ms();
+	int err;
 
-	int err = bt_le_ext_adv_start(info->adv, BT_LE_EXT_ADV_START_DEFAULT);
+	if (info->adv == NULL) {
+		err = bt_le_ext_adv_create(&adv_param, NULL, &info->adv);
+		if (err) {
+			printk("Failed to create advertiser (err %d)\n", err);
+			return;
+		}
+
+		err = bt_le_ext_adv_set_data(info->adv, adv_data, ARRAY_SIZE(adv_data), NULL, 0);
+		if (err) {
+			printk("Failed to set adv data (err %d)\n", err);
+			return;
+		}
+
+		info->current_interval_ms = target_interval_ms;
+	} else if (info->current_interval_ms != target_interval_ms) {
+		err = bt_le_ext_adv_stop(info->adv);
+		if (err) {
+			printk("Advertiser stop before update returned %d\n", err);
+		}
+
+		err = bt_le_ext_adv_update_param(info->adv, &adv_param);
+		if (err) {
+			printk("Failed to update advertising interval to %u ms (err %d)\n",
+			       target_interval_ms, err);
+			return;
+		}
+
+		info->current_interval_ms = target_interval_ms;
+	}
+
+	err = bt_le_ext_adv_start(info->adv, BT_LE_EXT_ADV_START_DEFAULT);
 	if (err) {
 		printk("Failed to start advertising (err %d)\n", err);
 	} else {
-		printk("Advertiser started successfully\n");
+		printk("Advertiser started successfully (%u ms interval)\n", target_interval_ms);
+		schedule_interval_fallback(info);
 	}
+}
+
+static void advertiser_interval_work_handler(struct k_work *work)
+{
+	struct advertiser_info *info =
+		CONTAINER_OF(k_work_delayable_from_work(work), struct advertiser_info, interval_work);
+
+	k_work_submit(&info->work);
 }
 
 static void exchange_func(struct bt_conn *conn, uint8_t err,
@@ -147,6 +242,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 
     printk("Connected to client!\n");
+    last_connection_timestamp_ms = k_uptime_get();
+    k_work_cancel_delayable(&singleton_adv.interval_work);
     current_conn = bt_conn_ref(conn);
 
 	int param_err = bt_conn_le_param_update(conn, conn_param);
@@ -199,34 +296,8 @@ int ble_init(void)
 
 	bt_conn_cb_register(&conn_callbacks);
 	printk("Bluetooth initialized\n");
-
-	struct bt_le_adv_param adv_param = BT_LE_ADV_PARAM_INIT(
-		BT_LE_ADV_OPT_CONN,
-		BT_GAP_MS_TO_ADV_INTERVAL(2000),
-	    BT_GAP_MS_TO_ADV_INTERVAL(2000),
-		NULL
-	);
-
-    err = bt_le_ext_adv_create(&adv_param, NULL, &singleton_adv.adv);
-	if (err) {
-		printk("Failed to create advertiser (err %d)\n", err);
-		return 0;
-	}
-
-	/* Advertising payload (include flags + name) */
-	const struct bt_data ad[] = {
-		BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-		BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME,
-			(sizeof(CONFIG_BT_DEVICE_NAME) - 1)),
-	};
-
-	err = bt_le_ext_adv_set_data(singleton_adv.adv, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err) {
-		printk("Failed to set adv data (err %d)\n", err);
-		return 0;
-	}
-
 	k_work_init(&singleton_adv.work, start_connectable_advertiser);
+	k_work_init_delayable(&singleton_adv.interval_work, advertiser_interval_work_handler);
 	k_work_submit(&singleton_adv.work);
 
     return 0;

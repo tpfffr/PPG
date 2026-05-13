@@ -23,7 +23,7 @@
 /* --- Hardware Pin Definitions --- */
 #define MAX32664_RSTN_PIN  13  // Pin 1.13 (Reset)
 #define MAX32664_MFIO_PIN  3   // Pin 0.3  (Multi-Function IO)
-#define PACKET_LEN 10
+#define PACKET_LEN 20
 #define SENSOR_RING_CAPACITY 2000
 #define MAX_FETCH_PER_PASS 10
 #define MAX_NOTIFY_BATCHES_PER_PASS 1
@@ -35,7 +35,7 @@
 
 /* Structure for BLE data transmission */
 struct __packed sensor_packet {
-    uint64_t timestamp;
+    uint32_t timestamp;
     uint32_t ecg;   // GREEN LED Data
     uint32_t resp;  // Battery Data
 };
@@ -52,6 +52,7 @@ static struct sensor_ring_buffer sample_ring;
 static struct sensor_packet notify_batch[PACKET_LEN];
 static atomic_t session_active = ATOMIC_INIT(0);
 static atomic_t explicit_stop_requested = ATOMIC_INIT(0);
+static uint64_t session_start_ms;
 static bool sensor_streaming;
 static K_MUTEX_DEFINE(session_lock);
 static K_MUTEX_DEFINE(ring_lock);
@@ -388,6 +389,8 @@ int measurement_session_start(void)
     err = sensor_stream_start_locked();
     if (err) {
         atomic_set(&session_active, 0);
+    } else {
+        session_start_ms = k_uptime_get();
     }
     sensor_busy_updating = false;
     k_mutex_unlock(&session_lock);
@@ -515,7 +518,7 @@ int main(void) {
             }
 
             sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
-            packet.timestamp = k_uptime_get();
+            packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
             packet.resp = battery_mv;
             sample_ring_push(&packet);
