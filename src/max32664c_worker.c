@@ -100,9 +100,13 @@ static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf
 	report.PPG1 = (((uint32_t)buf_ptr[0] << 16) | ((uint32_t)buf_ptr[1] << 8) | buf_ptr[2]) & 0x07FFFF;
 	report.PPG2 = (((uint32_t)buf_ptr[3] << 16) | ((uint32_t)buf_ptr[4] << 8) | buf_ptr[5]) & 0x07FFFF;
 	report.PPG3 = (((uint32_t)buf_ptr[6] << 16) | ((uint32_t)buf_ptr[7] << 8) | buf_ptr[8]) & 0x07FFFF;
-	report.PPG4 = 0; /* (((uint32_t)buf_ptr[9] << 16) | ((uint32_t)buf_ptr[10] << 8) | buf_ptr[11]) & 0x07FFFF; */
+	report.PPG4 = (((uint32_t)buf_ptr[9] << 16) | ((uint32_t)buf_ptr[10] << 8) | buf_ptr[11]) & 0x07FFFF;
     report.PPG5 = 0;
     report.PPG6 = 0;
+
+	printk("Parsed raw report at offset %d: PPG1=%u PPG2=%u PPG3=%u PPG4=%u\n",
+	       (int)(buf_ptr - data->max32664_i2c_buffer),
+	       report.PPG1, report.PPG2, report.PPG3, report.PPG4);
 
 	max32664c_push_to_queue(&data->raw_report_queue, &report);
 }
@@ -375,11 +379,25 @@ void max32664c_worker(const struct device *dev)
 								(fifo * hub_sample_size) + 1, 10);
 
 			if (data->max32664_i2c_buffer[0] == 0) {
-				for (int i = 0; i < fifo; i++) {
-					max32664c_parse_raw_at_offset(dev,
-						&data->max32664_i2c_buffer[1 + (i * hub_sample_size)]);
+			for (int i = 0; i < fifo; i++) {
+					uint8_t *sample = &data->max32664_i2c_buffer[1 + (i * hub_sample_size)];
+
+					printk("RAW sample %d:", i);
+					for (int j = 0; j < hub_sample_size; j++) {
+						printk(" %02X", sample[j]);
+					}
+					printk("\n");
+
+					max32664c_parse_raw_at_offset(dev, sample);
 				}
 			}
+
+			// if (data->max32664_i2c_buffer[0] == 0) {
+			// 	for (int i = 0; i < fifo; i++) {
+			// 		max32664c_parse_raw_at_offset(dev,
+			// 			&data->max32664_i2c_buffer[1 + (i * hub_sample_size)]);
+			// 	}
+			// }
 			break;
 		}
 

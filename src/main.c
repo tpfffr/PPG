@@ -442,7 +442,8 @@ int main(void) {
                     BLE_TX_THREAD_PRIORITY, 0, K_NO_WAIT);
 
     struct sensor_value green;
-    // struct sensor_value ir;
+    struct sensor_value ir;
+
     uint32_t battery_mv = 0;
     uint64_t now = k_uptime_get();
     uint64_t stats_t0 = k_uptime_get();
@@ -518,9 +519,10 @@ int main(void) {
             }
 
             sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
+            sensor_channel_get(max32664_dev, SENSOR_CHAN_IR, &ir);
             packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
-            packet.resp = battery_mv;
+            packet.resp = ir.val1;
             sample_ring_push(&packet);
             fetched_this_sec++;
             pushed_this_sec++;
