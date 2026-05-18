@@ -386,7 +386,7 @@ int measurement_session_start(void)
     atomic_set(&explicit_stop_requested, 0);
     atomic_set(&session_active, 1);
 
-    max32664c_reset_sample_counter_state();
+    // max32664c_reset_sample_counter_state();
 
     err = sensor_stream_start_locked();
     if (err) {
@@ -448,7 +448,7 @@ int main(void) {
     uint32_t battery_mv = 0;
     uint64_t now = k_uptime_get();
     uint64_t stats_t0 = k_uptime_get();
-    uint32_t ts = 0;
+    // uint32_t ts = 0;
 
     static int low_batt_count = 0;
     uint32_t fetched_this_sec = 0;
@@ -521,10 +521,10 @@ int main(void) {
             }
 
             sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
-            sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &ts);
+            // sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &ts);
 
-            packet.timestamp = (uint32_t)ts;
-            // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+            // packet.timestamp = (uint32_t)ts;
+            packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
             sample_ring_push(&packet);
             fetched_this_sec++;

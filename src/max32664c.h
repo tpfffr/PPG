@@ -43,7 +43,7 @@ enum max32664c_scd_states {
 	MAX32664C_SCD_STATE_ON_OBJECT,
 	MAX32664C_SCD_STATE_ON_SKIN,
 };
-void max32664c_reset_sample_counter_state(void);
+// void max32664c_reset_sample_counter_state(void);
 
 /** @brief LED current structure.
  */
@@ -81,7 +81,7 @@ struct max32664c_ext_spo2_meas_t {
 /** @brief Raw data structure, reported by the sensor hub.
  */
 struct max32664c_raw_report_t {
-	uint32_t sample_counter;
+	// uint32_t sample_counter;
 	uint32_t PPG1: 24;
 	uint32_t PPG2: 24;
 	uint32_t PPG3: 24;
