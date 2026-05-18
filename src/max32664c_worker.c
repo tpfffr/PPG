@@ -19,6 +19,9 @@ static uint32_t fifo_too_large_events;
 static uint32_t status_in_overflow_events;
 static uint32_t status_out_overflow_events;
 static int64_t raw_queue_last_full_log_ms;
+static bool sample_counter_valid;
+static uint8_t prev_sample_counter_raw;
+static uint32_t sample_counter_extended;
 
 
 LOG_MODULE_REGISTER(maxim_max32664c_worker, CONFIG_SENSOR_LOG_LEVEL);
@@ -89,35 +92,58 @@ static void max32664c_push_to_queue(struct k_msgq *msgq, const void *data)
 	}
 }
 
-static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf_ptr)
+static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf_ptr, uint32_t timestamp_ms)
 {
 	struct max32664c_data *data = dev->data;
 	struct max32664c_raw_report_t report;
 
 	memset(&report, 0, sizeof(struct max32664c_raw_report_t));
 
+	report.timestamp_ms = timestamp_ms;
+
+	report.sample_counter = buf_ptr[0];
+
+	uint8_t raw_counter = buf_ptr[0];
+
+	if (!sample_counter_valid) {
+		sample_counter_valid = true;
+		prev_sample_counter_raw = raw_counter;
+		sample_counter_extended = raw_counter;
+	} else {
+		uint8_t delta = (uint8_t)(raw_counter - prev_sample_counter_raw);
+		sample_counter_extended += delta;
+		prev_sample_counter_raw = raw_counter;
+	}
+
+	report.sample_counter = sample_counter_extended;
+
 	// Parse and mask with 0x07FFFF to ensure we strictly get the 19-bit ADC value
-	report.PPG1 = (((uint32_t)buf_ptr[0] << 16) | ((uint32_t)buf_ptr[1] << 8) | buf_ptr[2]) & 0x07FFFF;
-	report.PPG2 = (((uint32_t)buf_ptr[3] << 16) | ((uint32_t)buf_ptr[4] << 8) | buf_ptr[5]) & 0x07FFFF;
-	report.PPG3 = (((uint32_t)buf_ptr[6] << 16) | ((uint32_t)buf_ptr[7] << 8) | buf_ptr[8]) & 0x07FFFF;
-	report.PPG4 = (((uint32_t)buf_ptr[9] << 16) | ((uint32_t)buf_ptr[10] << 8) | buf_ptr[11]) & 0x07FFFF;
+	report.PPG1 = (((uint32_t)buf_ptr[1] << 16) | ((uint32_t)buf_ptr[2] << 8) | buf_ptr[3]) & 0x07FFFF;
+	report.PPG2 = (((uint32_t)buf_ptr[4] << 16) | ((uint32_t)buf_ptr[5] << 8) | buf_ptr[6]) & 0x07FFFF;
+	report.PPG3 = (((uint32_t)buf_ptr[7] << 16) | ((uint32_t)buf_ptr[8] << 8) | buf_ptr[9]) & 0x07FFFF;
+	report.PPG4 = 0; /*(((uint32_t)buf_ptr[10] << 16) | ((uint32_t)buf_ptr[11] << 8) | buf_ptr[12]) & 0x07FFFF;*/
     report.PPG5 = 0;
     report.PPG6 = 0;
 
-	printk("Parsed raw report at offset %d: PPG1=%u PPG2=%u PPG3=%u PPG4=%u\n",
-	       (int)(buf_ptr - data->max32664_i2c_buffer),
-	       report.PPG1, report.PPG2, report.PPG3, report.PPG4);
+	// printk("Parsed raw report at offset %d: PPG1=%u PPG2=%u PPG3=%u PPG4=%u\n",
+	//        (int)(buf_ptr - data->max32664_i2c_buffer),
+	//        report.PPG1, report.PPG2, report.PPG3, report.PPG4);
 
 	max32664c_push_to_queue(&data->raw_report_queue, &report);
 }
 
 /** @brief          Process the buffer to get the raw data from the sensor hub.
  *  @param dev      Pointer to device
+ *  @param timestamp_ms Timestamp in milliseconds
  */
-static void max32664c_parse_and_push_raw(const struct device *dev)
+static void max32664c_parse_and_push_raw(const struct device *dev, uint32_t timestamp_ms)
 {
 	struct max32664c_data *data = dev->data;
 	struct max32664c_raw_report_t report;
+
+	report.timestamp_ms = timestamp_ms;
+
+	report.sample_counter = data->max32664_i2c_buffer[0];
 
 	report.PPG1 = ((uint32_t)(data->max32664_i2c_buffer[1]) << 16) |
 		       ((uint32_t)(data->max32664_i2c_buffer[2]) << 8) |
@@ -364,8 +390,9 @@ void max32664c_worker(const struct device *dev)
 
 		switch (data->op_mode) {
 		case MAX32664C_OP_MODE_RAW: {
-			uint8_t hub_sample_size = 18;
-
+			uint8_t hub_sample_size = 19;
+			uint32_t batch_end_ms;
+			uint32_t sample_period_ms = 20; /* example: 50 Hz effective output */
 
 			if (fifo > 0) {
 				fifo_reads_this_sec++;
@@ -376,28 +403,21 @@ void max32664c_worker(const struct device *dev)
 			}
 
 			max32664c_i2c_transmit(dev, tx, 2, data->max32664_i2c_buffer,
-								(fifo * hub_sample_size) + 1, 10);
+						(fifo * hub_sample_size) + 1, 10);
 
 			if (data->max32664_i2c_buffer[0] == 0) {
-			for (int i = 0; i < fifo; i++) {
-					uint8_t *sample = &data->max32664_i2c_buffer[1 + (i * hub_sample_size)];
+				batch_end_ms = (uint32_t)k_uptime_get();
 
-					printk("RAW sample %d:", i);
-					for (int j = 0; j < hub_sample_size; j++) {
-						printk(" %02X", sample[j]);
-					}
-					printk("\n");
+				for (int i = 0; i < fifo; i++) {
+					uint32_t sample_ts_ms =
+						batch_end_ms - (uint32_t)((fifo - 1 - i) * sample_period_ms);
 
-					max32664c_parse_raw_at_offset(dev, sample);
+					max32664c_parse_raw_at_offset(
+						dev,
+						&data->max32664_i2c_buffer[1 + (i * hub_sample_size)],
+						sample_ts_ms);
 				}
 			}
-
-			// if (data->max32664_i2c_buffer[0] == 0) {
-			// 	for (int i = 0; i < fifo; i++) {
-			// 		max32664c_parse_raw_at_offset(dev,
-			// 			&data->max32664_i2c_buffer[1 + (i * hub_sample_size)]);
-			// 	}
-			// }
 			break;
 		}
 
@@ -417,7 +437,7 @@ void max32664c_worker(const struct device *dev)
 				break;
 			}
 
-			max32664c_parse_and_push_raw(dev);
+			// max32664c_parse_and_push_raw(dev);
 			max32664c_parse_and_push_ext_report(dev);
 
 			break;
@@ -438,7 +458,7 @@ void max32664c_worker(const struct device *dev)
 				break;
 			}
 
-			max32664c_parse_and_push_raw(dev);
+			// max32664c_parse_and_push_raw(dev);
 			max32664c_parse_and_push_report(dev);
 
 			break;

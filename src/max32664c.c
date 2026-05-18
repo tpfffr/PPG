@@ -252,7 +252,7 @@ int max32664c_set_mode_raw(const struct device *dev)
 	printk("-> RAW Mode Check 2: Setting output format...\n");
 	tx[0] = 0x10;
 	tx[1] = 0x00;
-	tx[2] = MAX32664C_OUT_SENSOR_ONLY;
+	tx[2] = MAX32664C_OUT_SENSOR_COUNTER;
 	if (max32664c_i2c_transmit(dev, tx, 3, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
 		return -EINVAL;
 	}
@@ -743,6 +743,16 @@ static int max32664c_channel_get(const struct device *dev, enum sensor_channel c
 		val->val1 = data->raw.PPG3;
 		break;
 	}
+	case SENSOR_CHAN_MAX32664C_TIMESTAMP_MS: {
+		val->val1 = data->raw.timestamp_ms;
+		val->val2 = 0;
+		break;
+	}
+	case SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER: {
+		val->val1 = data->raw.sample_counter;
+		val->val2 = 0;
+		break;
+	}
 	// case SENSOR_CHAN_GREEN2: {
 	// 	val->val1 = data->raw.PPG4;
 	// 	break;
@@ -1069,6 +1079,7 @@ int max32664c_init(const struct device *dev)
 	/* (see page 17 of the User Guide) */
 	gpio_pin_set_dt(&config->reset_gpio, true);
 	k_msleep(1700);
+	k_msleep(300);
 
 	/* Read the device mode */
 	tx[0] = 0x02;

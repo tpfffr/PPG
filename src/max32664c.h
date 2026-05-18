@@ -23,11 +23,15 @@
 /** @brief Output formats of the sensor hub.
  */
 enum max32664c_output_format {
-	MAX32664C_OUT_PAUSE,
-	MAX32664C_OUT_SENSOR_ONLY,
-	MAX32664C_OUT_ALGORITHM_ONLY,
-	MAX32664C_OUT_ALGO_AND_SENSOR,
+	MAX32664C_OUT_PAUSE = 0x00,
+	MAX32664C_OUT_SENSOR_ONLY = 0x01,
+	MAX32664C_OUT_ALGORITHM_ONLY = 0x02,
+	MAX32664C_OUT_ALGO_AND_SENSOR = 0x03,
+	MAX32664C_OUT_SENSOR_COUNTER = 0x05,
+	MAX32664C_OUT_ALGORITHM_COUNTER = 0x06,
+	MAX32664C_OUT_ALGO_AND_SENSOR_COUNTER = 0x07,
 };
+
 
 /** @brief Skin contact detection states.
  *  @note The SCD states are only available when the SCD only mode is enabled.
@@ -75,6 +79,8 @@ struct max32664c_ext_spo2_meas_t {
 /** @brief Raw data structure, reported by the sensor hub.
  */
 struct max32664c_raw_report_t {
+	uint32_t timestamp_ms;
+	uint32_t sample_counter;
 	uint32_t PPG1: 24;
 	uint32_t PPG2: 24;
 	uint32_t PPG3: 24;
