@@ -252,6 +252,7 @@ int max32664c_set_mode_raw(const struct device *dev)
 	printk("-> RAW Mode Check 2: Setting output format...\n");
 	tx[0] = 0x10;
 	tx[1] = 0x00;
+	// counter
 	tx[2] = MAX32664C_OUT_SENSOR_COUNTER;
 	if (max32664c_i2c_transmit(dev, tx, 3, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
 		return -EINVAL;

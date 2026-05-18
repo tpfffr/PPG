@@ -33,19 +33,6 @@
 #define BLE_TX_THREAD_STACK_SIZE 2048
 #define BLE_TX_THREAD_PRIORITY 5
 
-// static int regulators_init(void)
-// {
-//     NRF_POWER->DCDCEN0 = 0;  /* REG0 -> DC/DC */
-//     NRF_POWER->DCDCEN  = 0;  /* REG1 -> LDO  */
-//     NRF_SPIM3->ENABLE = 0;
-//     *(volatile uint32_t *)0x4002F004 = 1;
-
-//     return 0;
-// }
-
-// SYS_INIT(regulators_init, PRE_KERNEL_1, 0);
-
-
 /* Structure for BLE data transmission */
 struct __packed sensor_packet {
     uint32_t timestamp;
@@ -73,6 +60,18 @@ static K_THREAD_STACK_DEFINE(ble_tx_thread_stack, BLE_TX_THREAD_STACK_SIZE);
 static struct k_thread ble_tx_thread_data;
 
 K_SEM_DEFINE(ble_ready_sem, 0, 1);
+
+static int regulators_init(void)
+{
+    NRF_POWER->DCDCEN0 = 1;  /* REG0 -> DC/DC */
+    NRF_POWER->DCDCEN  = 0;  /* REG1 -> LDO  */
+    NRF_SPIM3->ENABLE = 0;
+    *(volatile uint32_t *)0x4002F004 = 1;
+
+    return 0;
+}
+
+SYS_INIT(regulators_init, PRE_KERNEL_1, 0);
 
 /* Global Device Pointers */
 const struct device *gpio0_dev = DEVICE_DT_GET(DT_NODELABEL(gpio0));
@@ -436,17 +435,8 @@ int main(void) {
     }
 
     bt_conn_cb_register(&connection_callbacks);
-    k_msleep(500);
-
-    int err = ble_init();
-    if (err) {
-        printk("ble_init failed err=%d\n", err);
-        return err;
-    }
-    else {
-        printk("BLE initialized successfully\n");
-    }
-
+    ble_init();
+    printk("Advertising started. Waiting for connection...\n");
     k_msleep(100);
     k_thread_create(&ble_tx_thread_data, ble_tx_thread_stack,
                     K_THREAD_STACK_SIZEOF(ble_tx_thread_stack),
@@ -454,16 +444,11 @@ int main(void) {
                     BLE_TX_THREAD_PRIORITY, 0, K_NO_WAIT);
 
     struct sensor_value green;
-<<<<<<< HEAD
-    struct sensor_value ir;
-    struct sensor_value ts;
-=======
->>>>>>> working_branch
+    struct sensor_value counter;
 
     uint32_t battery_mv = 0;
     uint64_t now = k_uptime_get();
     uint64_t stats_t0 = k_uptime_get();
-    uint32_t counter = 0;
 
     static int low_batt_count = 0;
     uint32_t fetched_this_sec = 0;
@@ -526,7 +511,6 @@ int main(void) {
             int err;
             size_t ring_used_now;
 
-
             if (!atomic_get(&session_active) || sensor_busy_updating) {
                 break;
             }
@@ -536,23 +520,13 @@ int main(void) {
                 break;
             }
 
-
-
             sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
-<<<<<<< HEAD
-            sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &ts);
-
-            packet.timestamp = (uint32_t)ts.val1;
-            packet.ecg = green.val1;
-            packet.resp = battery_mv;
-
-=======
             sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
 
-            // packet.timestamp = (uint32_t)ts;
-            packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+            packet.timestamp = (uint32_t)counter.val1;
+            // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
->>>>>>> working_branch
+            packet.resp = battery_mv;
             sample_ring_push(&packet);
             fetched_this_sec++;
             pushed_this_sec++;
@@ -578,6 +552,20 @@ int main(void) {
         if (k_uptime_get() - stats_t0 >= DEBUG_STATS_INTERVAL_MS) {
             uint32_t overwritten_total = sample_ring_overwritten();
             size_t ring_used_now = sample_ring_used();
+
+            printk("MAIN: fetched=%u pushed=%u ring_used=%u ring_hi=%u overwritten_total=%u overwritten_delta=%u ble_ready=%d session=%ld loops=%u max_loop_us=%u max_gap_us=%u max_fetch_loop=%u\n",
+                   fetched_this_sec,
+                   pushed_this_sec,
+                   (unsigned int)ring_used_now,
+                   (unsigned int)ring_high_water_this_sec,
+                   overwritten_total,
+                   overwritten_total - last_overwritten_total,
+                   ble_is_ready(),
+                   (long)atomic_get(&session_active),
+                   loop_iterations_this_sec,
+                   max_loop_us_this_sec,
+                   max_loop_gap_us_this_sec,
+                   max_fetched_per_loop_this_sec);
 
             fetched_this_sec = 0;
             pushed_this_sec = 0;
