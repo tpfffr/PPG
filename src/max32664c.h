@@ -22,6 +22,7 @@
 
 /** @brief Output formats of the sensor hub.
  */
+
 enum max32664c_output_format {
 	MAX32664C_OUT_PAUSE = 0x00,
 	MAX32664C_OUT_SENSOR_ONLY = 0x01,
@@ -42,6 +43,7 @@ enum max32664c_scd_states {
 	MAX32664C_SCD_STATE_ON_OBJECT,
 	MAX32664C_SCD_STATE_ON_SKIN,
 };
+void max32664c_reset_sample_counter_state(void);
 
 /** @brief LED current structure.
  */
@@ -79,7 +81,10 @@ struct max32664c_ext_spo2_meas_t {
 /** @brief Raw data structure, reported by the sensor hub.
  */
 struct max32664c_raw_report_t {
+<<<<<<< HEAD
 	uint32_t timestamp_ms;
+=======
+>>>>>>> working_branch
 	uint32_t sample_counter;
 	uint32_t PPG1: 24;
 	uint32_t PPG2: 24;

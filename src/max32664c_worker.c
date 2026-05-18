@@ -23,6 +23,10 @@ static bool sample_counter_valid;
 static uint8_t prev_sample_counter_raw;
 static uint32_t sample_counter_extended;
 
+static bool sample_counter_valid;
+static uint8_t prev_sample_counter_raw;
+static uint32_t sample_counter_extended;
+
 
 LOG_MODULE_REGISTER(maxim_max32664c_worker, CONFIG_SENSOR_LOG_LEVEL);
 
@@ -34,7 +38,12 @@ LOG_MODULE_REGISTER(maxim_max32664c_worker, CONFIG_SENSOR_LOG_LEVEL);
  *  @return             0 when successful, otherwise an error code
  */
 
-
+void max32664c_reset_sample_counter_state(void)
+{
+    sample_counter_valid = false;
+    prev_sample_counter_raw = 0;
+    sample_counter_extended = 0;
+}
 
 static int max32664c_get_hub_status(const struct device *dev, uint8_t *status, uint8_t *i2c_error)
 {
@@ -92,23 +101,53 @@ static void max32664c_push_to_queue(struct k_msgq *msgq, const void *data)
 	}
 }
 
+<<<<<<< HEAD
 static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf_ptr, uint32_t timestamp_ms)
+=======
+// static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf_ptr)
+// {
+// 	struct max32664c_data *data = dev->data;
+// 	struct max32664c_raw_report_t report;
+
+// 	memset(&report, 0, sizeof(struct max32664c_raw_report_t));
+
+// 	// Parse and mask with 0x07FFFF to ensure we strictly get the 19-bit ADC value
+// 	report.PPG1 = (((uint32_t)buf_ptr[0] << 16) | ((uint32_t)buf_ptr[1] << 8) | buf_ptr[2]) & 0x07FFFF;
+// 	report.PPG2 = (((uint32_t)buf_ptr[3] << 16) | ((uint32_t)buf_ptr[4] << 8) | buf_ptr[5]) & 0x07FFFF;
+// 	report.PPG3 = (((uint32_t)buf_ptr[6] << 16) | ((uint32_t)buf_ptr[7] << 8) | buf_ptr[8]) & 0x07FFFF;
+// 	report.PPG4 = 0; /* (((uint32_t)buf_ptr[9] << 16) | ((uint32_t)buf_ptr[10] << 8) | buf_ptr[11]) & 0x07FFFF; */
+//     report.PPG5 = 0;
+//     report.PPG6 = 0;
+
+// 	max32664c_push_to_queue(&data->raw_report_queue, &report);
+// }
+
+static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf_ptr)
+>>>>>>> working_branch
 {
 	struct max32664c_data *data = dev->data;
 	struct max32664c_raw_report_t report;
 
+
 	memset(&report, 0, sizeof(struct max32664c_raw_report_t));
 
+<<<<<<< HEAD
 	report.timestamp_ms = timestamp_ms;
 
 	report.sample_counter = buf_ptr[0];
 
+=======
+>>>>>>> working_branch
 	uint8_t raw_counter = buf_ptr[0];
 
 	if (!sample_counter_valid) {
 		sample_counter_valid = true;
 		prev_sample_counter_raw = raw_counter;
+<<<<<<< HEAD
 		sample_counter_extended = raw_counter;
+=======
+		sample_counter_extended = 0;
+>>>>>>> working_branch
 	} else {
 		uint8_t delta = (uint8_t)(raw_counter - prev_sample_counter_raw);
 		sample_counter_extended += delta;
@@ -125,9 +164,15 @@ static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf
     report.PPG5 = 0;
     report.PPG6 = 0;
 
+<<<<<<< HEAD
 	// printk("Parsed raw report at offset %d: PPG1=%u PPG2=%u PPG3=%u PPG4=%u\n",
 	//        (int)(buf_ptr - data->max32664_i2c_buffer),
 	//        report.PPG1, report.PPG2, report.PPG3, report.PPG4);
+=======
+	printk("Parsed raw report at offset %d: PPG1=%u PPG2=%u PPG3=%u",
+	       (int)(buf_ptr - data->max32664_i2c_buffer),
+	       report.PPG1, report.PPG2, report.PPG3);
+>>>>>>> working_branch
 
 	max32664c_push_to_queue(&data->raw_report_queue, &report);
 }
@@ -391,8 +436,12 @@ void max32664c_worker(const struct device *dev)
 		switch (data->op_mode) {
 		case MAX32664C_OP_MODE_RAW: {
 			uint8_t hub_sample_size = 19;
+<<<<<<< HEAD
 			uint32_t batch_end_ms;
 			uint32_t sample_period_ms = 20; /* example: 50 Hz effective output */
+=======
+
+>>>>>>> working_branch
 
 			if (fifo > 0) {
 				fifo_reads_this_sec++;

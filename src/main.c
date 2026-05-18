@@ -387,6 +387,8 @@ int measurement_session_start(void)
     atomic_set(&explicit_stop_requested, 0);
     atomic_set(&session_active, 1);
 
+    max32664c_reset_sample_counter_state();
+
     err = sensor_stream_start_locked();
     if (err) {
         atomic_set(&session_active, 0);
@@ -452,12 +454,16 @@ int main(void) {
                     BLE_TX_THREAD_PRIORITY, 0, K_NO_WAIT);
 
     struct sensor_value green;
+<<<<<<< HEAD
     struct sensor_value ir;
     struct sensor_value ts;
+=======
+>>>>>>> working_branch
 
     uint32_t battery_mv = 0;
     uint64_t now = k_uptime_get();
     uint64_t stats_t0 = k_uptime_get();
+    uint32_t counter = 0;
 
     static int low_batt_count = 0;
     uint32_t fetched_this_sec = 0;
@@ -533,12 +539,20 @@ int main(void) {
 
 
             sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
+<<<<<<< HEAD
             sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &ts);
 
             packet.timestamp = (uint32_t)ts.val1;
             packet.ecg = green.val1;
             packet.resp = battery_mv;
 
+=======
+            sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
+
+            // packet.timestamp = (uint32_t)ts;
+            packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+            packet.ecg = green.val1;
+>>>>>>> working_branch
             sample_ring_push(&packet);
             fetched_this_sec++;
             pushed_this_sec++;
