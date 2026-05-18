@@ -743,6 +743,11 @@ static int max32664c_channel_get(const struct device *dev, enum sensor_channel c
 		val->val1 = data->raw.PPG3;
 		break;
 	}
+	case SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER: {
+		val->val1 = data->raw.sample_counter;
+		val->val2 = 0;
+		break;
+	}
 	// case SENSOR_CHAN_GREEN2: {
 	// 	val->val1 = data->raw.PPG4;
 	// 	break;
