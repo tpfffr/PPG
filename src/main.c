@@ -521,11 +521,12 @@ int main(void) {
             }
 
             sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
-            sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
+            // sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
 
             // packet.timestamp = (uint32_t)ts;
             packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
+            packet.resp = battery_mv;
             sample_ring_push(&packet);
             fetched_this_sec++;
             pushed_this_sec++;
