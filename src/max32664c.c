@@ -744,14 +744,6 @@ static int max32664c_channel_get(const struct device *dev, enum sensor_channel c
 		val->val1 = data->raw.PPG3;
 		break;
 	}
-<<<<<<< HEAD
-	case SENSOR_CHAN_MAX32664C_TIMESTAMP_MS: {
-		val->val1 = data->raw.timestamp_ms;
-		val->val2 = 0;
-		break;
-	}
-=======
->>>>>>> working_branch
 	case SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER: {
 		val->val1 = data->raw.sample_counter;
 		val->val2 = 0;

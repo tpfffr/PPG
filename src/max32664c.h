@@ -81,10 +81,6 @@ struct max32664c_ext_spo2_meas_t {
 /** @brief Raw data structure, reported by the sensor hub.
  */
 struct max32664c_raw_report_t {
-<<<<<<< HEAD
-	uint32_t timestamp_ms;
-=======
->>>>>>> working_branch
 	uint32_t sample_counter;
 	uint32_t PPG1: 24;
 	uint32_t PPG2: 24;
