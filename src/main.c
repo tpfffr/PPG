@@ -233,7 +233,8 @@ static void ble_tx_thread(void *arg1, void *arg2, void *arg3)
 static int sensor_stream_start_locked(void)
 {
     int err;
-    struct sensor_value off = { .val1 = 0 };
+    struct sensor_value red_curr = { .val1 = 50 };
+    struct sensor_value ir_curr = { .val1 = 0 };
     struct sensor_value green_curr = { .val1 = 15 };
 
     if (sensor_streaming) {
@@ -244,8 +245,8 @@ static int sensor_stream_start_locked(void)
     gpio_pin_configure(gpio0_dev, MAX32664_MFIO_PIN, GPIO_OUTPUT_HIGH);
     k_msleep(20);
 
-    sensor_attr_set(max32664_dev, SENSOR_CHAN_RED, SENSOR_ATTR_CONFIGURATION, &off);
-    sensor_attr_set(max32664_dev, SENSOR_CHAN_IR, SENSOR_ATTR_CONFIGURATION, &off);
+    sensor_attr_set(max32664_dev, SENSOR_CHAN_RED, SENSOR_ATTR_CONFIGURATION, &red_curr);
+    sensor_attr_set(max32664_dev, SENSOR_CHAN_IR, SENSOR_ATTR_CONFIGURATION, &ir_curr);
     sensor_attr_set(max32664_dev, SENSOR_CHAN_GREEN, SENSOR_ATTR_CONFIGURATION, &green_curr);
 
     err = max32664c_set_mode_raw(max32664_dev);

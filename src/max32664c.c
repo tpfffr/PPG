@@ -300,7 +300,7 @@ int max32664c_set_mode_raw(const struct device *dev)
 	tx[0] = 0x40; // Write command
 	tx[1] = 0x00;
 	tx[2] = 0x2A; // Register address
-	tx[3] = 0x03; // 0x03 = 124 mA limit for all LEDs
+	tx[3] = 0x02; // 0x02
 	if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
 		return -EINVAL;
 	}
@@ -754,14 +754,15 @@ static int max32664c_channel_get(const struct device *dev, enum sensor_channel c
 		val->val1 = data->raw.PPG1;
 		break;
 	}
-	case SENSOR_CHAN_IR: {
-		val->val1 = data->raw.PPG4;
+	case SENSOR_CHAN_RED: {
+		val->val1 = data->raw.PPG2;
 		break;
 	}
-	case SENSOR_CHAN_RED: {
+	case SENSOR_CHAN_IR: {
 		val->val1 = data->raw.PPG3;
 		break;
 	}
+
 	case SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER: {
 		val->val1 = data->raw.sample_counter;
 		val->val2 = 0;
@@ -917,14 +918,15 @@ static int max32664c_attr_set(const struct device *dev, enum sensor_channel chan
 			data->led_current[0] = val->val1 & 0xFF;
 			break;
 		}
-		case SENSOR_CHAN_IR: {
+		case SENSOR_CHAN_RED: {
 			data->led_current[1] = val->val1 & 0xFF;
 			break;
 		}
-		case SENSOR_CHAN_RED: {
+		case SENSOR_CHAN_IR: {
 			data->led_current[2] = val->val1 & 0xFF;
 			break;
 		}
+
 		// The second green LED is physically connected to the first green LED
 		// case SENSOR_CHAN_GREEN2: {
 		// 	data->led_current[3] = val->val1 & 0xFF;
@@ -1034,14 +1036,15 @@ static int max32664c_attr_get(const struct device *dev, enum sensor_channel chan
 			val->val1 = data->led_current[0];
 			break;
 		}
-		case SENSOR_CHAN_IR: {
+		case SENSOR_CHAN_RED: {
 			val->val1 = data->led_current[1];
 			break;
 		}
-		case SENSOR_CHAN_RED: {
+		case SENSOR_CHAN_IR: {
 			val->val1 = data->led_current[2];
 			break;
 		}
+
 
 		default: {
 			LOG_ERR("Channel %u not supported for getting attribute!", (int)chan);
