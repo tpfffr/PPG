@@ -11,9 +11,6 @@
 #include <zephyr/kernel.h>
 #include "max32664c.h"
 
-// extern volatile bool sensor_busy_updating;
-extern struct k_mutex session_lock; // Gain access to the global mutex
-
 static bool sample_counter_valid;
 static uint8_t prev_sample_counter_raw;
 static uint32_t sample_counter_extended;
@@ -293,10 +290,6 @@ void max32664c_worker(const struct device *dev)
 
 	while (data->is_thread_running) {
 
-		// if (sensor_busy_updating) {
-        //     k_msleep(20);
-        //     continue;
-        // }
 		err = max32664c_get_hub_status(dev, &status, &i2c_error);
 		if (err) {
 			LOG_ERR("Failed to get hub status! Error: %d", err);
@@ -427,6 +420,6 @@ void max32664c_worker(const struct device *dev)
 			raw_queue_max_used_this_sec = k_msgq_num_used_get(&data->raw_report_queue);
 		}
 
-		k_msleep(1);
+		k_msleep(2);
 	}
 }

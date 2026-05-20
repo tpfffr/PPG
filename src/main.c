@@ -393,10 +393,13 @@ int main(void) {
             }
             k_mutex_unlock(&session_lock);
 
-            if (err) break;
+            if (err)  {
+            //     printk("Failed to fetch sample err=%d\n", err);
+                break;
+            }
 
-            // packet.timestamp = (uint32_t)counter.val1;
-            packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+            packet.timestamp = (uint32_t)counter.val1;
+            // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
             packet.resp = battery_mv;
             sample_ring_push(&packet);
