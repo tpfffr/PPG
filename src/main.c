@@ -54,7 +54,7 @@ static atomic_t session_active = ATOMIC_INIT(0);
 static atomic_t explicit_stop_requested = ATOMIC_INIT(0);
 static uint64_t session_start_ms;
 static bool sensor_streaming;
-static K_MUTEX_DEFINE(session_lock);
+K_MUTEX_DEFINE(session_lock);
 static K_MUTEX_DEFINE(ring_lock);
 static K_THREAD_STACK_DEFINE(ble_tx_thread_stack, BLE_TX_THREAD_STACK_SIZE);
 static struct k_thread ble_tx_thread_data;
@@ -80,10 +80,8 @@ const struct device *max32664_dev;
 static const struct adc_dt_spec adc_channel = ADC_DT_SPEC_GET(DT_PATH(zephyr_user));
 const struct i2c_dt_spec max32664_i2c_spec = I2C_DT_SPEC_GET(DT_NODELABEL(max32664));
 
-extern volatile bool sensor_busy_updating;
 extern int max32664c_init(const struct device *dev);
 extern int max32664c_pm_action(const struct device *dev, enum pm_device_action action);
-
 
 /******************** Function Prototypes ********************/
 uint32_t read_battery_mv(void);
@@ -196,50 +194,14 @@ static size_t sample_ring_used(void)
     return used;
 }
 
-static uint32_t sample_ring_overwritten(void)
-{
-    uint32_t overwritten;
-
-    k_mutex_lock(&ring_lock, K_FOREVER);
-    overwritten = sample_ring.overwritten_samples;
-    k_mutex_unlock(&ring_lock);
-
-    return overwritten;
-}
-
 static void ble_tx_thread(void *arg1, void *arg2, void *arg3)
 {
-    uint64_t stats_t0 = k_uptime_get();
-    uint32_t ble_batches_this_sec = 0;
-    uint32_t ble_samples_this_sec = 0;
-    uint32_t notify_errs_this_sec = 0;
-    uint32_t loop_iterations_this_sec = 0;
-    uint32_t max_loop_us_this_sec = 0;
-    uint32_t max_loop_gap_us_this_sec = 0;
-    uint32_t max_notify_us_this_sec = 0;
-    uint32_t max_batches_per_loop_this_sec = 0;
-    uint32_t prev_loop_start_cyc = 0;
-    bool prev_loop_start_valid = false;
-
     ARG_UNUSED(arg1);
     ARG_UNUSED(arg2);
     ARG_UNUSED(arg3);
 
     while (1) {
-        bool did_work = false;
         size_t notify_budget = MAX_NOTIFY_BATCHES_PER_PASS;
-        uint32_t loop_start_cyc = k_cycle_get_32();
-        uint32_t batches_in_loop = 0;
-
-        loop_iterations_this_sec++;
-        if (prev_loop_start_valid) {
-            uint32_t loop_gap_us = k_cyc_to_us_floor32(loop_start_cyc - prev_loop_start_cyc);
-            if (loop_gap_us > max_loop_gap_us_this_sec) {
-                max_loop_gap_us_this_sec = loop_gap_us;
-            }
-        }
-        prev_loop_start_cyc = loop_start_cyc;
-        prev_loop_start_valid = true;
 
         if (sample_ring_used() >= BACKLOG_NOTIFY_BOOST_THRESHOLD) {
             notify_budget = MAX_NOTIFY_BATCHES_PER_PASS_BOOSTED;
@@ -257,75 +219,22 @@ static void ble_tx_thread(void *arg1, void *arg2, void *arg3)
                 break;
             }
 
-            uint32_t notify_start_cyc = k_cycle_get_32();
             err = ble_send_sensor_data(notify_batch,
                                        batch_count * sizeof(notify_batch[0]));
-            uint32_t notify_us = k_cyc_to_us_floor32(k_cycle_get_32() - notify_start_cyc);
-            if (notify_us > max_notify_us_this_sec) {
-                max_notify_us_this_sec = notify_us;
-            }
-            if (err) {
-                notify_errs_this_sec++;
-                printk("notify err=%d ready=%d busy=%d ring_used=%u overwritten=%u\n",
-                       err, ble_is_ready(), sensor_busy_updating,
-                       (unsigned int)sample_ring_used(),
-                       sample_ring_overwritten());
-                break;
-            }
+
 
             sample_ring_consume(batch_count);
-            ble_batches_this_sec++;
-            ble_samples_this_sec += batch_count;
-            batches_in_loop++;
-            did_work = true;
         }
 
-        if (batches_in_loop > max_batches_per_loop_this_sec) {
-            max_batches_per_loop_this_sec = batches_in_loop;
-        }
-
-        {
-            uint32_t loop_us = k_cyc_to_us_floor32(k_cycle_get_32() - loop_start_cyc);
-            if (loop_us > max_loop_us_this_sec) {
-                max_loop_us_this_sec = loop_us;
-            }
-        }
-
-        if (k_uptime_get() - stats_t0 >= DEBUG_STATS_INTERVAL_MS) {
-            printk("BLETX: ring_used=%u ble_ready=%d session=%ld batches=%u samples=%u notify_errs=%u loops=%u max_loop_us=%u max_gap_us=%u max_notify_us=%u max_batch_loop=%u\n",
-                   (unsigned int)sample_ring_used(),
-                   ble_is_ready(),
-                   (long)atomic_get(&session_active),
-                   ble_batches_this_sec,
-                   ble_samples_this_sec,
-                   notify_errs_this_sec,
-                   loop_iterations_this_sec,
-                   max_loop_us_this_sec,
-                   max_loop_gap_us_this_sec,
-                   max_notify_us_this_sec,
-                   max_batches_per_loop_this_sec);
-
-            ble_batches_this_sec = 0;
-            ble_samples_this_sec = 0;
-            notify_errs_this_sec = 0;
-            loop_iterations_this_sec = 0;
-            max_loop_us_this_sec = 0;
-            max_loop_gap_us_this_sec = 0;
-            max_notify_us_this_sec = 0;
-            max_batches_per_loop_this_sec = 0;
-            stats_t0 = k_uptime_get();
-        }
-
-        if (!did_work) {
-            k_msleep(5);
-        }
+        k_msleep(5);
     }
 }
 
 static int sensor_stream_start_locked(void)
 {
     int err;
-    struct sensor_value off = { .val1 = 0 };
+    struct sensor_value red_curr = { .val1 = 50 };
+    struct sensor_value ir_curr = { .val1 = 0 };
     struct sensor_value green_curr = { .val1 = 15 };
 
     if (sensor_streaming) {
@@ -336,8 +245,8 @@ static int sensor_stream_start_locked(void)
     gpio_pin_configure(gpio0_dev, MAX32664_MFIO_PIN, GPIO_OUTPUT_HIGH);
     k_msleep(20);
 
-    sensor_attr_set(max32664_dev, SENSOR_CHAN_RED, SENSOR_ATTR_CONFIGURATION, &off);
-    sensor_attr_set(max32664_dev, SENSOR_CHAN_IR, SENSOR_ATTR_CONFIGURATION, &off);
+    sensor_attr_set(max32664_dev, SENSOR_CHAN_RED, SENSOR_ATTR_CONFIGURATION, &red_curr);
+    sensor_attr_set(max32664_dev, SENSOR_CHAN_IR, SENSOR_ATTR_CONFIGURATION, &ir_curr);
     sensor_attr_set(max32664_dev, SENSOR_CHAN_GREEN, SENSOR_ATTR_CONFIGURATION, &green_curr);
 
     err = max32664c_set_mode_raw(max32664_dev);
@@ -382,7 +291,6 @@ int measurement_session_start(void)
     int err;
 
     k_mutex_lock(&session_lock, K_FOREVER);
-    sensor_busy_updating = true;
     atomic_set(&explicit_stop_requested, 0);
     atomic_set(&session_active, 1);
 
@@ -394,7 +302,6 @@ int measurement_session_start(void)
     } else {
         session_start_ms = k_uptime_get();
     }
-    sensor_busy_updating = false;
     k_mutex_unlock(&session_lock);
 
     return err;
@@ -405,14 +312,12 @@ int measurement_session_stop(bool explicit_stop)
     int err;
 
     k_mutex_lock(&session_lock, K_FOREVER);
-    sensor_busy_updating = true;
     atomic_set(&explicit_stop_requested, explicit_stop ? 1 : 0);
     atomic_set(&session_active, 0);
 
     err = sensor_stream_stop_locked();
     sample_ring_clear();
 
-    sensor_busy_updating = false;
     k_mutex_unlock(&session_lock);
 
     return err;
@@ -445,39 +350,14 @@ int main(void) {
 
     struct sensor_value green;
     struct sensor_value counter;
-
     uint32_t battery_mv = 0;
     uint64_t now = k_uptime_get();
-    uint64_t stats_t0 = k_uptime_get();
-
     static int low_batt_count = 0;
-    uint32_t fetched_this_sec = 0;
-    uint32_t pushed_this_sec = 0;
-    uint32_t loop_iterations_this_sec = 0;
-    uint32_t max_loop_us_this_sec = 0;
-    uint32_t max_loop_gap_us_this_sec = 0;
-    uint32_t max_fetched_per_loop_this_sec = 0;
-    size_t ring_high_water_this_sec = 0;
-    uint32_t last_overwritten_total = sample_ring_overwritten();
-    uint32_t prev_loop_start_cyc = 0;
-    bool prev_loop_start_valid = false;
 
     battery_mv = read_battery_mv() + 200;
 
-    while (1) {
-        bool did_work = false;
-        uint32_t loop_start_cyc = k_cycle_get_32();
-        uint32_t fetched_in_loop = 0;
 
-        loop_iterations_this_sec++;
-        if (prev_loop_start_valid) {
-            uint32_t loop_gap_us = k_cyc_to_us_floor32(loop_start_cyc - prev_loop_start_cyc);
-            if (loop_gap_us > max_loop_gap_us_this_sec) {
-                max_loop_gap_us_this_sec = loop_gap_us;
-            }
-        }
-        prev_loop_start_cyc = loop_start_cyc;
-        prev_loop_start_valid = true;
+    while (1) {
 
         if (k_uptime_get() - now >= 1800000) {
 
@@ -497,90 +377,36 @@ int main(void) {
             // }
         }
 
-        if (sensor_busy_updating) {
-            uint32_t loop_us = k_cyc_to_us_floor32(k_cycle_get_32() - loop_start_cyc);
-            if (loop_us > max_loop_us_this_sec) {
-                max_loop_us_this_sec = loop_us;
-            }
-            k_msleep(10);
-            continue;
-        }
-
         for (size_t i = 0; i < MAX_FETCH_PER_PASS; i++) {
             struct sensor_packet packet;
             int err;
-            size_t ring_used_now;
-
-            if (!atomic_get(&session_active) || sensor_busy_updating) {
+            // size_t ring_used_now;
+            k_mutex_lock(&session_lock, K_FOREVER); // Protect the fetch operation
+            if (!atomic_get(&session_active)) {
+                k_mutex_unlock(&session_lock);
                 break;
             }
 
             err = sensor_sample_fetch(max32664_dev);
-            if (err) {
+            if (!err) {
+                sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
+                sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
+            }
+            k_mutex_unlock(&session_lock);
+
+            if (err)  {
+            //     printk("Failed to fetch sample err=%d\n", err);
                 break;
             }
-
-            sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
-            sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
 
             packet.timestamp = (uint32_t)counter.val1;
             // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
             packet.resp = battery_mv;
             sample_ring_push(&packet);
-            fetched_this_sec++;
-            pushed_this_sec++;
-            fetched_in_loop++;
-            ring_used_now = sample_ring_used();
-            if (ring_used_now > ring_high_water_this_sec) {
-                ring_high_water_this_sec = ring_used_now;
-            }
-            did_work = true;
+
         }
-
-        if (fetched_in_loop > max_fetched_per_loop_this_sec) {
-            max_fetched_per_loop_this_sec = fetched_in_loop;
-        }
-
-        {
-            uint32_t loop_us = k_cyc_to_us_floor32(k_cycle_get_32() - loop_start_cyc);
-            if (loop_us > max_loop_us_this_sec) {
-                max_loop_us_this_sec = loop_us;
-            }
-        }
-
-        if (k_uptime_get() - stats_t0 >= DEBUG_STATS_INTERVAL_MS) {
-            uint32_t overwritten_total = sample_ring_overwritten();
-            size_t ring_used_now = sample_ring_used();
-
-            printk("MAIN: fetched=%u pushed=%u ring_used=%u ring_hi=%u overwritten_total=%u overwritten_delta=%u ble_ready=%d session=%ld loops=%u max_loop_us=%u max_gap_us=%u max_fetch_loop=%u\n",
-                   fetched_this_sec,
-                   pushed_this_sec,
-                   (unsigned int)ring_used_now,
-                   (unsigned int)ring_high_water_this_sec,
-                   overwritten_total,
-                   overwritten_total - last_overwritten_total,
-                   ble_is_ready(),
-                   (long)atomic_get(&session_active),
-                   loop_iterations_this_sec,
-                   max_loop_us_this_sec,
-                   max_loop_gap_us_this_sec,
-                   max_fetched_per_loop_this_sec);
-
-            fetched_this_sec = 0;
-            pushed_this_sec = 0;
-            loop_iterations_this_sec = 0;
-            max_loop_us_this_sec = 0;
-            max_loop_gap_us_this_sec = 0;
-            max_fetched_per_loop_this_sec = 0;
-            ring_high_water_this_sec = ring_used_now;
-            last_overwritten_total = overwritten_total;
-            stats_t0 = k_uptime_get();
-        }
-
-        if (!did_work) {
-            k_msleep(5);
-        }
+        k_msleep(20);
     }
 
     return 0;

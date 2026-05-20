@@ -10,16 +10,21 @@
 
 #define DT_DRV_COMPAT maxim_max32664c
 
+static K_MUTEX_DEFINE(max32664c_bus_lock);
+
 #if (DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 0)
 #warning "max32664c driver enabled without any devices"
 #endif
 
 LOG_MODULE_REGISTER(maxim_max32664c, CONFIG_SENSOR_LOG_LEVEL);
 
+
 int max32664c_i2c_transmit(const struct device *dev, uint8_t *tx_buf, uint8_t tx_len,
 			   uint8_t *rx_buf, uint32_t rx_len, uint16_t delay_ms)
 {
 	const struct max32664c_config *config = dev->config;
+
+	k_mutex_lock(&max32664c_bus_lock, K_FOREVER);
 
 	// ALWAYS wake the hub before a command
 	gpio_pin_set_dt(&config->mfio_gpio, false);
@@ -27,6 +32,7 @@ int max32664c_i2c_transmit(const struct device *dev, uint8_t *tx_buf, uint8_t tx
 
 	if (i2c_write_dt(&config->i2c, tx_buf, tx_len)) {
 		gpio_pin_set_dt(&config->mfio_gpio, true);
+		k_mutex_unlock(&max32664c_bus_lock);
 		return -EBUSY;
 	}
 
@@ -34,6 +40,7 @@ int max32664c_i2c_transmit(const struct device *dev, uint8_t *tx_buf, uint8_t tx
 
 	if (i2c_read_dt(&config->i2c, rx_buf, rx_len)) {
 		gpio_pin_set_dt(&config->mfio_gpio, true);
+		k_mutex_unlock(&max32664c_bus_lock);
 		return -EBUSY;
 	}
 
@@ -43,9 +50,11 @@ int max32664c_i2c_transmit(const struct device *dev, uint8_t *tx_buf, uint8_t tx
 
 	if (rx_buf[0] != 0) {
 		// Log the actual error code to help debug (e.g., 0x01, 0x02)
+		k_mutex_unlock(&max32664c_bus_lock);
 		return -EINVAL;
 	}
 
+	k_mutex_unlock(&max32664c_bus_lock);
 	return 0;
 }
 
@@ -63,14 +72,14 @@ static int max32664c_afe_read_reg(const struct device *dev, uint8_t reg, uint8_t
     return 0;
 }
 
-static int max32664c_afe_write_reg(const struct device *dev, uint8_t reg, uint8_t val)
-{
-    uint8_t tx[4] = {0x40, 0x00, reg, val};
-    uint8_t rx;
+// static int max32664c_afe_write_reg(const struct device *dev, uint8_t reg, uint8_t val)
+// {
+//     uint8_t tx[4] = {0x40, 0x00, reg, val};
+//     uint8_t rx;
 
-    return max32664c_i2c_transmit(dev, tx, sizeof(tx), &rx, 1,
-                                  MAX32664C_DEFAULT_CMD_DELAY);
-}
+//     return max32664c_i2c_transmit(dev, tx, sizeof(tx), &rx, 1,
+//                                   MAX32664C_DEFAULT_CMD_DELAY);
+// }
 
 static void max32664c_dump_afe_config(const struct device *dev)
 {
@@ -225,7 +234,7 @@ static int max32664c_stop_algo(const struct device *dev)
 
 	data->op_mode = MAX32664C_OP_MODE_IDLE;
 
-	k_thread_suspend(data->thread_id);
+	// k_thread_suspend(data->thread_id);
 
 	return 0;
 }
@@ -278,11 +287,20 @@ int max32664c_set_mode_raw(const struct device *dev)
 	}
 
 	/* Set AFE sample rate to 200 Hz with 4-sample averaging */
-	printk("-> RAW Mode Check 5: Setting AFE Sample Rate reg 0x12 = 0x22...\n");
+	printk("-> RAW Mode Check 5: Setting AFE Sample Rate reg 0x12 = 0x2B...\n");
 	tx[0] = 0x40;
 	tx[1] = 0x00;
 	tx[2] = 0x12;
-	tx[3] = 0x22;
+	tx[3] = 0x2B;
+	if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
+		return -EINVAL;
+	}
+
+	printk("-> Setting AFE LED Range reg 0x2A = 0x00...\n");
+	tx[0] = 0x40; // Write command
+	tx[1] = 0x00;
+	tx[2] = 0x2A; // Register address
+	tx[3] = 0x02; // 0x02
 	if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
 		return -EINVAL;
 	}
@@ -736,14 +754,15 @@ static int max32664c_channel_get(const struct device *dev, enum sensor_channel c
 		val->val1 = data->raw.PPG1;
 		break;
 	}
-	case SENSOR_CHAN_IR: {
-		val->val1 = data->raw.PPG4;
+	case SENSOR_CHAN_RED: {
+		val->val1 = data->raw.PPG2;
 		break;
 	}
-	case SENSOR_CHAN_RED: {
+	case SENSOR_CHAN_IR: {
 		val->val1 = data->raw.PPG3;
 		break;
 	}
+
 	case SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER: {
 		val->val1 = data->raw.sample_counter;
 		val->val2 = 0;
@@ -899,14 +918,16 @@ static int max32664c_attr_set(const struct device *dev, enum sensor_channel chan
 			data->led_current[0] = val->val1 & 0xFF;
 			break;
 		}
-		case SENSOR_CHAN_IR: {
+		case SENSOR_CHAN_RED: {
 			data->led_current[1] = val->val1 & 0xFF;
 			break;
 		}
-		case SENSOR_CHAN_RED: {
+		case SENSOR_CHAN_IR: {
 			data->led_current[2] = val->val1 & 0xFF;
 			break;
 		}
+
+		// The second green LED is physically connected to the first green LED
 		// case SENSOR_CHAN_GREEN2: {
 		// 	data->led_current[3] = val->val1 & 0xFF;
 		// 	break;
@@ -1015,14 +1036,15 @@ static int max32664c_attr_get(const struct device *dev, enum sensor_channel chan
 			val->val1 = data->led_current[0];
 			break;
 		}
-		case SENSOR_CHAN_IR: {
+		case SENSOR_CHAN_RED: {
 			val->val1 = data->led_current[1];
 			break;
 		}
-		case SENSOR_CHAN_RED: {
+		case SENSOR_CHAN_IR: {
 			val->val1 = data->led_current[2];
 			break;
 		}
+
 
 		default: {
 			LOG_ERR("Channel %u not supported for getting attribute!", (int)chan);
