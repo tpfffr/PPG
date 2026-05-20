@@ -36,13 +36,14 @@ static const struct bt_data adv_data[] = {
 		(sizeof(CONFIG_BT_DEVICE_NAME) - 1)),
 };
 
+extern struct k_mutex session_lock; // Gain access to main's mutex
 extern const struct device *max32664_dev;
 extern const struct i2c_dt_spec max32664_i2c_spec;
 extern struct k_sem ble_ready_sem;
 extern int measurement_session_start(void);
 extern int measurement_session_stop(bool explicit_stop);
 
-volatile bool sensor_busy_updating = false;
+// volatile bool sensor_busy_updating = false;
 
 /* Function prototypes */
 static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr *attr,
@@ -369,26 +370,32 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
         return len;
     }
 
-    sensor_busy_updating = true;
-    k_msleep(20);
+    // sensor_busy_updating = true;
+    k_msleep(50);
 
     printk("Received setting change request: ID=%u, Value=%u\n", setting_id, value);
 
     switch (setting_id) {
     case CTRL_CMD_LED_CURRENT: { // LED current
+
+        k_mutex_lock(&session_lock, K_FOREVER); // Lock out the main thread loop
+
         struct sensor_value val = { .val1 = value };
         sensor_attr_set(max32664_dev, SENSOR_CHAN_GREEN, SENSOR_ATTR_CONFIGURATION, &val);
 
         int err = afe_write_reg(max32664_dev, 0x23, value & 0xFF);
         printk("BLE: Set LED1 current reg 0x23 = 0x%02X err=%d\n", value & 0xFF, err);
+        k_mutex_unlock(&session_lock);
         break;
     }
 
     case CTRL_CMD_ADC_RANGE: { // ADC range / effective gain via reg 0x11[3:2]
+        k_mutex_lock(&session_lock, K_FOREVER); // Lock out the main thread loop
 		uint8_t r11;
 		int err = afe_read_reg(max32664_dev, 0x11, &r11);
 		if (err) {
 			printk("BLE: failed to read reg 0x11 err=%d\n", err);
+			k_mutex_unlock(&session_lock);
 			break;
 		}
 
@@ -397,27 +404,33 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
 
 		err = afe_write_reg(max32664_dev, 0x11, reg_val);
 		printk("BLE: Set ADC range reg 0x11 = 0x%02X err=%d\n", reg_val, err);
+		k_mutex_unlock(&session_lock);
 		break;
 	}
 
     case CTRL_CMD_INTEGRATION_TIME: { // integration time
+        k_mutex_lock(&session_lock, K_FOREVER); // Lock out the main thread loop
         uint8_t r11;
         int err = afe_read_reg(max32664_dev, 0x11, &r11);
         if (!err) {
             uint8_t reg_val = (r11 & 0x0C) | (value & 0x03);
             err = afe_write_reg(max32664_dev, 0x11, reg_val);
             printk("BLE: Set reg 0x11 = 0x%02X err=%d\n", reg_val, err);
+            k_mutex_unlock(&session_lock);
         } else {
             printk("BLE: failed to read reg 0x11 err=%d\n", err);
+            k_mutex_unlock(&session_lock);
         }
         break;
     }
 
 	case CTRL_CMD_DELIVERED_RATE: { // delivered rate selector
+        k_mutex_lock(&session_lock, K_FOREVER); // Lock out the main thread loop
 		static const uint8_t delivered_to_afe_sr_map[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
 
 		if (value >= ARRAY_SIZE(delivered_to_afe_sr_map)) {
 			printk("BLE: invalid rate idx=%u\n", value);
+			k_mutex_unlock(&session_lock);
 			break;
 		}
 
@@ -429,21 +442,24 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
 		int err = afe_write_reg(max32664_dev, 0x12, reg12);
 		printk("BLE: Set delivered-rate idx=%u -> reg 0x12 = 0x%02X err=%d\n",
 				value, reg12, err);
+		k_mutex_unlock(&session_lock);
 		break;
 	}
 
     case CTRL_CMD_AVERAGING: { // averaging
+        k_mutex_lock(&session_lock, K_FOREVER); // Lock out the main thread loop
         current_smp_ave_code = value & 0x07;
         uint8_t reg12 = make_reg12(current_ppg_sr_code, current_smp_ave_code);
 
         int err = afe_write_reg(max32664_dev, 0x12, reg12);
         printk("BLE: Set averaging code=%u -> reg 0x12 = 0x%02X err=%d\n",
                current_smp_ave_code, reg12, err);
+        k_mutex_unlock(&session_lock);
         break;
     }
     }
 
     k_msleep(50);
-    sensor_busy_updating = false;
+    // sensor_busy_updating = false;
     return len;
 }
