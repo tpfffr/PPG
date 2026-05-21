@@ -106,7 +106,7 @@ static void max32664c_parse_raw_at_offset(const struct device *dev, uint8_t *buf
 	report.PPG1 = (((uint32_t)buf_ptr[1] << 16) | ((uint32_t)buf_ptr[2] << 8) | buf_ptr[3]) & 0x07FFFF;
 	report.PPG2 = (((uint32_t)buf_ptr[4] << 16) | ((uint32_t)buf_ptr[5] << 8) | buf_ptr[6]) & 0x07FFFF;
 	report.PPG3 = (((uint32_t)buf_ptr[7] << 16) | ((uint32_t)buf_ptr[8] << 8) | buf_ptr[9]) & 0x07FFFF;
-	report.PPG4 = 0; /*(((uint32_t)buf_ptr[10] << 16) | ((uint32_t)buf_ptr[11] << 8) | buf_ptr[12]) & 0x07FFFF;*/
+	report.PPG4 = (((uint32_t)buf_ptr[10] << 16) | ((uint32_t)buf_ptr[11] << 8) | buf_ptr[12]) & 0x07FFFF;
     report.PPG5 = 0;
     report.PPG6 = 0;
 
@@ -131,9 +131,9 @@ static void max32664c_parse_and_push_raw(const struct device *dev)
 		       ((uint32_t)(data->max32664_i2c_buffer[8]) << 8) |
 		       data->max32664_i2c_buffer[9];
 
-	report.PPG4 = 0; /*((uint32_t)(data->max32664_i2c_buffer[10]) << 16) |
+	report.PPG4 = ((uint32_t)(data->max32664_i2c_buffer[10]) << 16) |
 		       ((uint32_t)(data->max32664_i2c_buffer[11]) << 8) |
-		       data->max32664_i2c_buffer[12];*/
+		       data->max32664_i2c_buffer[12];
 
 	/* PPG4 to 6 are used for PD2 */
 	// report.PPG4 = 0;

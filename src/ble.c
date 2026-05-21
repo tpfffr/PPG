@@ -10,13 +10,15 @@
 #include "max32664c.h"
 #include "max32664c_api.h"
 
-#define CTRL_CMD_LED_CURRENT       0U
-#define CTRL_CMD_ADC_RANGE         1U
-#define CTRL_CMD_INTEGRATION_TIME  2U
-#define CTRL_CMD_DELIVERED_RATE    3U
-#define CTRL_CMD_AVERAGING         4U
-#define CTRL_CMD_SESSION_START     5U
-#define CTRL_CMD_SESSION_STOP      6U
+#define CTRL_CMD_LED_CURRENT_GREEN       0U
+#define CTRL_CMD_LED_CURRENT_RED         1U
+#define CTRL_CMD_ADC_RANGE         2U
+#define CTRL_CMD_INTEGRATION_TIME  3U
+#define CTRL_CMD_DELIVERED_RATE    4U
+#define CTRL_CMD_AVERAGING         5U
+#define CTRL_CMD_SESSION_START     6U
+#define CTRL_CMD_SESSION_STOP      7U
+#define CTRL_CMT_PICKET_FENCE      8U
 #define ADV_FAST_INTERVAL_MS       200U
 #define ADV_SLOW_INTERVAL_MS       1000U
 #define ADV_RECENT_CONN_WINDOW_MS  (30U * 60U * 1000U)
@@ -340,13 +342,15 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
     uint8_t value      = data[1];
 
     switch (setting_id) {
-    case CTRL_CMD_LED_CURRENT:
+    case CTRL_CMD_LED_CURRENT_GREEN:
+    case CTRL_CMD_LED_CURRENT_RED:
     case CTRL_CMD_ADC_RANGE:
     case CTRL_CMD_INTEGRATION_TIME:
     case CTRL_CMD_DELIVERED_RATE:
     case CTRL_CMD_AVERAGING:
     case CTRL_CMD_SESSION_START:
     case CTRL_CMD_SESSION_STOP:
+    case CTRL_CMT_PICKET_FENCE:
         break;
     default:
         printk("Ignoring unknown setting ID: %u value=%u\n", setting_id, value);
@@ -373,8 +377,8 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
     printk("Received setting change request: ID=%u, Value=%u\n", setting_id, value);
 
     switch (setting_id) {
-        case CTRL_CMD_LED_CURRENT: { // LED current
-            static const uint8_t delivered_to_afe_led_map[] = {0x05, 0x0A, 0x14, 0x1E, 0x32, 0x64};
+        case CTRL_CMD_LED_CURRENT_GREEN: { // LED current
+            static const uint8_t delivered_to_afe_led_map[] = {0x00, 0x05, 0x12, 0x1B, 0x32, 0x64};
 
             value = (value >= ARRAY_SIZE(delivered_to_afe_led_map)) ? delivered_to_afe_led_map[ARRAY_SIZE(delivered_to_afe_led_map) - 1]
                                                                 : delivered_to_afe_led_map[value];
@@ -386,6 +390,21 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
 
             int err = afe_write_reg(max32664_dev, 0x23, value & 0xFF);
             printk("BLE: Set LED1 current reg 0x23 = 0x%02X err=%d\n", value & 0xFF, err);
+            k_mutex_unlock(&session_lock);
+            break;
+        }
+        case CTRL_CMD_LED_CURRENT_RED: { // LED current
+            static const uint8_t delivered_to_afe_led_map[] = {0x00, 0x05, 0x12, 0x1B, 0x32, 0x64};
+
+            value = (value >= ARRAY_SIZE(delivered_to_afe_led_map)) ? delivered_to_afe_led_map[ARRAY_SIZE(delivered_to_afe_led_map) - 1]
+                                                                : delivered_to_afe_led_map[value];
+
+            k_mutex_lock(&session_lock, K_FOREVER);
+            struct sensor_value val = { .val1 = value };
+            sensor_attr_set(max32664_dev, SENSOR_CHAN_RED, SENSOR_ATTR_CONFIGURATION, &val);
+
+            int err = afe_write_reg(max32664_dev, 0x24, value & 0xFF);
+            printk("BLE: Set LED2 current reg 0x24 = 0x%02X err=%d\n", value & 0xFF, err);
             k_mutex_unlock(&session_lock);
             break;
         }
@@ -402,8 +421,9 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
                 break;
             }
 
-            uint8_t adc_range_bits = (value & 0x03) << 2;   // bits [3:2]
-            uint8_t reg_val = (r11 & 0x03) | adc_range_bits; // preserve integration-time bits [1:0]
+            // set adc range of both PPG1 and PPG2
+            uint8_t range = value & 0x03;
+            uint8_t reg_val = (r11 & 0xC3) | (range << 2) | (range << 4);
 
             err = afe_write_reg(max32664_dev, 0x11, reg_val);
             printk("BLE: Set ADC range reg 0x11 = 0x%02X err=%d\n", reg_val, err);
@@ -416,7 +436,7 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
             k_mutex_lock(&session_lock, K_FOREVER);
             int err = afe_read_reg(max32664_dev, 0x11, &r11);
             if (!err) {
-                uint8_t reg_val = (r11 & 0x0C) | (value & 0x03);
+                uint8_t reg_val = (r11 & 0xFC) | (value & 0x03);
                 err = afe_write_reg(max32664_dev, 0x11, reg_val);
                 printk("BLE: Set reg 0x11 = 0x%02X err=%d\n", reg_val, err);
             } else {
@@ -460,6 +480,20 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
             printk("BLE: Set averaging code=%u -> reg 0x12 = 0x%02X err=%d\n",
                 current_smp_ave_code, reg12, err);
 
+            break;
+        }
+        case CTRL_CMT_PICKET_FENCE: {
+            k_mutex_lock(&session_lock, K_FOREVER);
+
+            uint8_t r16;
+            int err = afe_read_reg(max32664_dev, 0x16, &r16);
+            if (!err) {
+                r16 = (r16 & ~(1u << 7)) | ((value & 0x01) << 7);
+                err = afe_write_reg(max32664_dev, 0x16, r16);
+            }
+            k_mutex_unlock(&session_lock);
+
+            printk("BLE: Set picket fence reg 0x16 = 0x%02X err=%d\n", r16, err);
             break;
         }
     }

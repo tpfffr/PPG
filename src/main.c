@@ -233,9 +233,9 @@ static void ble_tx_thread(void *arg1, void *arg2, void *arg3)
 static int sensor_stream_start_locked(void)
 {
     int err;
-    struct sensor_value red_curr = { .val1 = 50 };
+    struct sensor_value red_curr = { .val1 = 0 };
     struct sensor_value ir_curr = { .val1 = 0 };
-    struct sensor_value green_curr = { .val1 = 15 };
+    struct sensor_value green_curr = { .val1 = 10 };
 
     if (sensor_streaming) {
         return 0;
@@ -248,6 +248,7 @@ static int sensor_stream_start_locked(void)
     sensor_attr_set(max32664_dev, SENSOR_CHAN_RED, SENSOR_ATTR_CONFIGURATION, &red_curr);
     sensor_attr_set(max32664_dev, SENSOR_CHAN_IR, SENSOR_ATTR_CONFIGURATION, &ir_curr);
     sensor_attr_set(max32664_dev, SENSOR_CHAN_GREEN, SENSOR_ATTR_CONFIGURATION, &green_curr);
+
 
     err = max32664c_set_mode_raw(max32664_dev);
     if (!err) {
@@ -349,6 +350,9 @@ int main(void) {
                     BLE_TX_THREAD_PRIORITY, 0, K_NO_WAIT);
 
     struct sensor_value green;
+    struct sensor_value red;
+    struct sensor_value ir;
+
     struct sensor_value counter;
     uint32_t battery_mv = 0;
     uint64_t now = k_uptime_get();
@@ -390,19 +394,23 @@ int main(void) {
             err = sensor_sample_fetch(max32664_dev);
             if (!err) {
                 sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
+                sensor_channel_get(max32664_dev, SENSOR_CHAN_RED, &red);
                 sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
             }
             k_mutex_unlock(&session_lock);
 
             if (err)  {
-            //     printk("Failed to fetch sample err=%d\n", err);
                 break;
             }
 
-            packet.timestamp = (uint32_t)counter.val1;
-            // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+
+
+            // packet.timestamp = (uint32_t)counter.val1;
+            packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
-            packet.resp = battery_mv;
+            packet.resp = red.val1;
+            printk("Fetched sample: GREEN=%u RED=%u TS=%u\n",
+                   green.val1, red.val1, packet.timestamp);
             sample_ring_push(&packet);
 
         }
