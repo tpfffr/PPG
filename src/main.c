@@ -82,6 +82,9 @@ const struct i2c_dt_spec max32664_i2c_spec = I2C_DT_SPEC_GET(DT_NODELABEL(max326
 
 extern int max32664c_init(const struct device *dev);
 extern int max32664c_pm_action(const struct device *dev, enum pm_device_action action);
+extern int max32664c_disable_sensors(const struct device *dev);
+extern int max32664c_afe_write_reg(const struct device *dev, uint8_t reg, uint8_t val);
+
 
 /******************** Function Prototypes ********************/
 uint32_t read_battery_mv(void);
@@ -324,6 +327,40 @@ int measurement_session_stop(bool explicit_stop)
     return err;
 }
 
+
+void shutdown_everything_low_batt(void)
+{
+    printk("Battery critically low. Shutting down everything...\n");
+
+    int err = max32664c_disable_sensors(max32664_dev);
+    printk("Disabled sensors with err=%d\n", err);
+
+    measurement_session_stop(true);
+    printk("Measurement session stopped.\n");
+
+    err = max32664c_afe_write_reg(max32664_dev, 0x0D, 0x01);
+    printk("Set AFE shutdown reg 0x0D = 0x01 err=%d\n", err);
+    k_msleep(50);
+
+    // int err = pm_device_action_run(max32664_dev, PM_DEVICE_ACTION_TURN_OFF);
+    // printk("Turn off MAX32664 err=%d\n", err);
+    // k_msleep(50);
+
+    uint8_t tx[3] = {0x01, 0x00, 0x01};
+    uint8_t rx;
+    max32664c_i2c_transmit(max32664_dev, tx, sizeof(tx), &rx, 1, 10);
+    k_msleep(50);
+
+    // const struct device *i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+    // err = pm_device_action_run(i2c_dev, PM_DEVICE_ACTION_SUSPEND);
+    // printk("Suspend I2C device err=%d\n", err);
+
+    k_msleep(50);
+
+    sys_poweroff();
+}
+
+
 /* --- Main Application --- */
 int main(void) {
 
@@ -335,6 +372,9 @@ int main(void) {
         printk("WARNING: MAX32664 driver not ready yet.\n");
     }
 
+    int err = max32664c_disable_sensors(max32664_dev);
+    measurement_session_stop(true);
+
     if (adc_is_ready_dt(&adc_channel)) {
         adc_channel_setup_dt(&adc_channel);
         adc_sequence_init_dt(&adc_channel, &sequence);
@@ -343,6 +383,7 @@ int main(void) {
     bt_conn_cb_register(&connection_callbacks);
     ble_init();
     printk("Advertising started. Waiting for connection...\n");
+
     k_msleep(100);
     k_thread_create(&ble_tx_thread_data, ble_tx_thread_stack,
                     K_THREAD_STACK_SIZEOF(ble_tx_thread_stack),
@@ -350,35 +391,39 @@ int main(void) {
                     BLE_TX_THREAD_PRIORITY, 0, K_NO_WAIT);
 
     struct sensor_value green;
-    struct sensor_value red;
-    struct sensor_value ir;
-
     struct sensor_value counter;
-    uint32_t battery_mv = 0;
-    uint64_t now = k_uptime_get();
     static int low_batt_count = 0;
+    uint32_t battery_mv = 0;
 
-    battery_mv = read_battery_mv() + 200;
-
+    uint64_t now = k_uptime_get();
+    battery_mv = read_battery_mv();
 
     while (1) {
 
-        if (k_uptime_get() - now >= 1800000) {
+        if (k_uptime_get() - now >= 120000) {
 
-            battery_mv = read_battery_mv() + 200;
+            battery_mv = read_battery_mv();
+
             now = k_uptime_get();
 
-            if (battery_mv > 0 && battery_mv < 3150) {
+            // send battery via BLE advertisement or notification here if needed
+
+            // ble_send_sensor_data(&battery_packet, sizeof(battery_packet));
+
+            if (battery_mv > 0 && battery_mv < 3550) {
                 low_batt_count++;
             } else {
                 low_batt_count = 0;
             }
 
-            printk("Battery Voltage: %u mV (low_batt_count=%d)\n", battery_mv, low_batt_count);
+            // For safety, if battery voltage is critically low, shut down everything immediately
+            if (battery_mv < 3400) {
+                shutdown_everything_low_batt();
+            }
 
-            // if (low_batt_count >= 3) {
-            //     shutdown_everything_low_batt();
-            // }
+            if (low_batt_count >= 3) {
+                shutdown_everything_low_batt();
+            }
         }
 
         for (size_t i = 0; i < MAX_FETCH_PER_PASS; i++) {
@@ -394,7 +439,8 @@ int main(void) {
             err = sensor_sample_fetch(max32664_dev);
             if (!err) {
                 sensor_channel_get(max32664_dev, SENSOR_CHAN_GREEN, &green);
-                sensor_channel_get(max32664_dev, SENSOR_CHAN_RED, &red);
+                // sensor_channel_get(max32664_dev, SENSOR_CHAN_RED, &red);
+                // sensor_channel_get(max32664_dev, SENSOR_CHAN_IR, &ir);
                 sensor_channel_get(max32664_dev, SENSOR_CHAN_MAX32664C_SAMPLE_COUNTER, &counter);
             }
             k_mutex_unlock(&session_lock);
@@ -403,14 +449,13 @@ int main(void) {
                 break;
             }
 
-
-
-            // packet.timestamp = (uint32_t)counter.val1;
-            packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+            packet.timestamp = (uint32_t)counter.val1;
+            // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
-            packet.resp = red.val1;
-            printk("Fetched sample: GREEN=%u RED=%u TS=%u\n",
-                   green.val1, red.val1, packet.timestamp);
+            // packet.resp = red.val1;
+            packet.resp = battery_mv;
+            // packet.ir = ir.val1;
+
             sample_ring_push(&packet);
 
         }

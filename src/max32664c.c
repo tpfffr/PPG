@@ -72,14 +72,14 @@ static int max32664c_afe_read_reg(const struct device *dev, uint8_t reg, uint8_t
     return 0;
 }
 
-// static int max32664c_afe_write_reg(const struct device *dev, uint8_t reg, uint8_t val)
-// {
-//     uint8_t tx[4] = {0x40, 0x00, reg, val};
-//     uint8_t rx;
+int max32664c_afe_write_reg(const struct device *dev, uint8_t reg, uint8_t val)
+{
+    uint8_t tx[4] = {0x40, 0x00, reg, val};
+    uint8_t rx;
 
-//     return max32664c_i2c_transmit(dev, tx, sizeof(tx), &rx, 1,
-//                                   MAX32664C_DEFAULT_CMD_DELAY);
-// }
+    return max32664c_i2c_transmit(dev, tx, sizeof(tx), &rx, 1,
+                                  MAX32664C_DEFAULT_CMD_DELAY);
+}
 
 static void max32664c_dump_afe_config(const struct device *dev)
 {
@@ -702,7 +702,7 @@ static int max32664c_exit_mode_wake_on_motion(const struct device *dev)
 	return 0;
 }
 
-static int max32664c_disable_sensors(const struct device *dev)
+int max32664c_disable_sensors(const struct device *dev)
 {
 
 	struct max32664c_data *data = dev->data;
