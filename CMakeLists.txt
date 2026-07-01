@@ -9,6 +9,7 @@ project(PPG)
 # 2. Compile all the driver files
 target_sources(app PRIVATE
     src/main.c
+    src/event_log.c
     # src/max32664_fw.h
     src/ble.c
     src/max32664c.c

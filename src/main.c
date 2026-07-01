@@ -15,10 +15,12 @@
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/time_units.h>
 #include <zephyr/sys/util.h>
+#include <limits.h>
 
 #include "max32664c.h"
 #include "max32664c_api.h"
 #include "ble.h"
+#include "event_log.h"
 
 /* --- Hardware Pin Definitions --- */
 #define MAX32664_RSTN_PIN  13  // Pin 1.13 (Reset)
@@ -92,6 +94,9 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err);
 void on_ble_disconnect(struct bt_conn *conn, uint8_t reason);
 extern int max32664c_i2c_transmit(const struct device *dev, uint8_t *tx_buf, uint8_t tx_len,
                                   uint8_t *rx_buf, uint32_t rx_len, uint16_t delay_ms);
+int measurement_session_start(void);
+int measurement_session_stop(bool explicit_stop);
+
 
 int16_t adc_buf;
 struct adc_sequence sequence = {
@@ -110,6 +115,9 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err) {
     int start_err = 0;
 
     ARG_UNUSED(conn);
+    event_log_add(EVENT_LOG_BLE_CONNECTED, err);
+    event_log_dump();
+
     if (!err && !atomic_get(&session_active)) {
         start_err = measurement_session_start();
     }
@@ -123,6 +131,10 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err) {
 
 void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
 {
+    event_log_add(EVENT_LOG_BLE_DISCONNECTED, reason);
+
+    measurement_session_stop(true);
+
     ARG_UNUSED(conn);
     printk("Application BLE disconnected reason=%u explicit_stop=%ld session_active=%ld\n",
            reason,
@@ -238,7 +250,7 @@ static int sensor_stream_start_locked(void)
     int err;
     struct sensor_value red_curr = { .val1 = 0 };
     struct sensor_value ir_curr = { .val1 = 0 };
-    struct sensor_value green_curr = { .val1 = 10 };
+    struct sensor_value green_curr = { .val1 = 5 };
 
     if (sensor_streaming) {
         return 0;
@@ -306,6 +318,7 @@ int measurement_session_start(void)
     } else {
         session_start_ms = k_uptime_get();
     }
+    event_log_add(EVENT_LOG_SESSION_START, err);
     k_mutex_unlock(&session_lock);
 
     return err;
@@ -321,6 +334,7 @@ int measurement_session_stop(bool explicit_stop)
 
     err = sensor_stream_stop_locked();
     sample_ring_clear();
+    event_log_add(EVENT_LOG_SESSION_STOP, err);
 
     k_mutex_unlock(&session_lock);
 
@@ -330,6 +344,7 @@ int measurement_session_stop(bool explicit_stop)
 
 void shutdown_everything_low_batt(void)
 {
+    event_log_add(EVENT_LOG_LOW_BATT_SHUTDOWN, 0);
     printk("Battery critically low. Shutting down everything...\n");
 
     int err = max32664c_disable_sensors(max32664_dev);
@@ -363,6 +378,9 @@ void shutdown_everything_low_batt(void)
 
 /* --- Main Application --- */
 int main(void) {
+    event_log_init();
+    event_log_add(EVENT_LOG_BOOT, (int16_t)(event_log_boot_count() & 0x7FFFu));
+    event_log_add(EVENT_LOG_MAIN_ENTER, 0);
 
     gpio_pin_configure(gpio1_dev, MAX32664_RSTN_PIN, GPIO_OUTPUT_HIGH);
     gpio_pin_configure(gpio0_dev, MAX32664_MFIO_PIN, GPIO_OUTPUT_HIGH);
@@ -370,10 +388,9 @@ int main(void) {
     max32664_dev = DEVICE_DT_GET(DT_NODELABEL(max32664));
     if (!device_is_ready(max32664_dev)) {
         printk("WARNING: MAX32664 driver not ready yet.\n");
+    } else {
+        event_log_add(EVENT_LOG_SENSOR_READY, 1);
     }
-
-    int err = max32664c_disable_sensors(max32664_dev);
-    measurement_session_stop(true);
 
     if (adc_is_ready_dt(&adc_channel)) {
         adc_channel_setup_dt(&adc_channel);
@@ -381,8 +398,11 @@ int main(void) {
     }
 
     bt_conn_cb_register(&connection_callbacks);
+    event_log_add(EVENT_LOG_BLE_INIT_START, 0);
     ble_init();
+    event_log_add(EVENT_LOG_BLE_INIT_DONE, 0);
     printk("Advertising started. Waiting for connection...\n");
+    event_log_add(EVENT_LOG_ADV_STARTED, 0);
 
     k_msleep(100);
     k_thread_create(&ble_tx_thread_data, ble_tx_thread_stack,
@@ -403,6 +423,7 @@ int main(void) {
         if (k_uptime_get() - now >= 120000) {
 
             battery_mv = read_battery_mv();
+            event_log_add(EVENT_LOG_LOW_BATT_CHECK, (int16_t)MIN(battery_mv, (uint32_t)INT16_MAX));
 
             now = k_uptime_get();
 
@@ -446,6 +467,7 @@ int main(void) {
             k_mutex_unlock(&session_lock);
 
             if (err)  {
+                event_log_add(EVENT_LOG_SENSOR_FETCH_ERR, err);
                 break;
             }
 

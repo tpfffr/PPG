@@ -20,7 +20,7 @@
 #define CTRL_CMD_SESSION_STOP      7U
 #define CTRL_CMT_PICKET_FENCE      8U
 #define ADV_FAST_INTERVAL_MS       200U
-#define ADV_SLOW_INTERVAL_MS       2000U
+#define ADV_SLOW_INTERVAL_MS       200U
 #define ADV_RECENT_CONN_WINDOW_MS  (15U * 60U * 1000U)
 
 /* Nordic UART Service (NUS) UUIDs */

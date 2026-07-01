@@ -325,14 +325,14 @@ int max32664c_set_mode_raw(const struct device *dev)
 	// 	return -EINVAL;
 	// }
 
-	printk("-> Photodiode bias...\n");
-	tx[0] = 0x40; // Write command
-	tx[1] = 0x00;
-	tx[2] = 0x15; // Register address
-	tx[3] = 0x11; // Enable photodiode bias
-	if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
-		return -EINVAL;
-	}
+	// printk("-> Photodiode bias...\n");
+	// tx[0] = 0x40; // Write command
+	// tx[1] = 0x00;
+	// tx[2] = 0x15; // Register address
+	// tx[3] = 0x11; // Enable photodiode bias
+	// if (max32664c_i2c_transmit(dev, tx, 4, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
+	// 	return -EINVAL;
+	// }
 
 	/* Set the LED current */
 	printk("-> RAW Mode Check 6: Setting LED currents...\n");
