@@ -378,7 +378,8 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
 
     switch (setting_id) {
         case CTRL_CMD_LED_CURRENT_GREEN: { // LED current
-            static const uint8_t delivered_to_afe_led_map[] = {0x00, 0x05, 0x12, 0x1B, 0x32, 0x64};
+            /* Roughly linear steps from 0 mA up to ~8 mA at the current LED range setting. */
+            static const uint8_t delivered_to_afe_led_map[] = {0x00, 0x02, 0x04, 0x08, 0x12, 0x16};
 
             value = (value >= ARRAY_SIZE(delivered_to_afe_led_map)) ? delivered_to_afe_led_map[ARRAY_SIZE(delivered_to_afe_led_map) - 1]
                                                                 : delivered_to_afe_led_map[value];
@@ -394,7 +395,8 @@ static ssize_t write_ctrl_point(struct bt_conn *conn, const struct bt_gatt_attr 
             break;
         }
         case CTRL_CMD_LED_CURRENT_RED: { // LED current
-            static const uint8_t delivered_to_afe_led_map[] = {0x00, 0x05, 0x12, 0x1B, 0x32, 0x64};
+            /* Roughly linear steps from 0 mA up to ~8 mA at the current LED range setting. */
+            static const uint8_t delivered_to_afe_led_map[] = {0x00, 0x05, 0x09, 0x0E, 0x12, 0x16};
 
             value = (value >= ARRAY_SIZE(delivered_to_afe_led_map)) ? delivered_to_afe_led_map[ARRAY_SIZE(delivered_to_afe_led_map) - 1]
                                                                 : delivered_to_afe_led_map[value];
