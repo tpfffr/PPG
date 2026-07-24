@@ -34,6 +34,38 @@
 #define DEBUG_STATS_INTERVAL_MS 1000
 #define BLE_TX_THREAD_STACK_SIZE 2048
 #define BLE_TX_THREAD_PRIORITY 5
+// #define AVG_WINDOW 20
+
+// typedef struct {
+//     float samples[AVG_WINDOW];
+//     float sum;
+//     int index;
+//     int count;
+// } MovingAverage;
+
+// void moving_average_init(MovingAverage *ma) {
+//     ma->sum = 0.0f;
+//     ma->index = 0;
+//     ma->count = 0;
+//     for (int i = 0; i < AVG_WINDOW; i++) {
+//         ma->samples[i] = 0.0f;
+//     }
+// }
+
+// float moving_average_update(MovingAverage *ma, float sample) {
+//     if (ma->count < AVG_WINDOW) {
+//         ma->samples[ma->index] = sample;
+//         ma->sum += sample;
+//         ma->count++;
+//     } else {
+//         ma->sum -= ma->samples[ma->index];
+//         ma->samples[ma->index] = sample;
+//         ma->sum += sample;
+//     }
+
+//     ma->index = (ma->index + 1) % AVG_WINDOW;
+//     return ma->sum / (float)ma->count;
+// }
 
 /* Structure for BLE data transmission */
 struct __packed sensor_packet {
@@ -60,6 +92,8 @@ K_MUTEX_DEFINE(session_lock);
 static K_MUTEX_DEFINE(ring_lock);
 static K_THREAD_STACK_DEFINE(ble_tx_thread_stack, BLE_TX_THREAD_STACK_SIZE);
 static struct k_thread ble_tx_thread_data;
+
+// MovingAverage battery_avg;
 
 K_SEM_DEFINE(ble_ready_sem, 0, 1);
 
@@ -106,9 +140,10 @@ struct adc_sequence sequence = {
 
 uint32_t read_battery_mv(void) {
     if (adc_read(adc_channel.dev, &sequence) < 0) return 0;
-    int32_t val_mv = adc_buf;
-    adc_raw_to_millivolts_dt(&adc_channel, &val_mv);
-    return (uint32_t)(val_mv * 5); // VDDH/5 scaling
+
+    int32_t val_uv = adc_buf;
+    adc_raw_to_microvolts_dt(&adc_channel, &val_uv);
+    return (uint32_t)((val_uv * 5 + 500) / 1000);
 }
 
 void on_ble_connect(struct bt_conn *conn, uint8_t err) {
@@ -344,7 +379,7 @@ int measurement_session_stop(bool explicit_stop)
 
 void shutdown_everything_low_batt(void)
 {
-    event_log_add(EVENT_LOG_LOW_BATT_SHUTDOWN, 0);
+    // event_log_add(EVENT_LOG_LOW_BATT_SHUTDOWN, 0);
     printk("Battery critically low. Shutting down everything...\n");
 
     int err = max32664c_disable_sensors(max32664_dev);
@@ -378,9 +413,9 @@ void shutdown_everything_low_batt(void)
 
 /* --- Main Application --- */
 int main(void) {
-    event_log_init();
-    event_log_add(EVENT_LOG_BOOT, (int16_t)(event_log_boot_count() & 0x7FFFu));
-    event_log_add(EVENT_LOG_MAIN_ENTER, 0);
+    // event_log_init();
+    // event_log_add(EVENT_LOG_BOOT, (int16_t)(event_log_boot_count() & 0x7FFFu));
+    // event_log_add(EVENT_LOG_MAIN_ENTER, 0);
 
     gpio_pin_configure(gpio1_dev, MAX32664_RSTN_PIN, GPIO_OUTPUT_HIGH);
     gpio_pin_configure(gpio0_dev, MAX32664_MFIO_PIN, GPIO_OUTPUT_HIGH);
@@ -388,8 +423,8 @@ int main(void) {
     max32664_dev = DEVICE_DT_GET(DT_NODELABEL(max32664));
     if (!device_is_ready(max32664_dev)) {
         printk("WARNING: MAX32664 driver not ready yet.\n");
-    } else {
-        event_log_add(EVENT_LOG_SENSOR_READY, 1);
+    // } else {
+    //     event_log_add(EVENT_LOG_SENSOR_READY, 1);
     }
 
     if (adc_is_ready_dt(&adc_channel)) {
@@ -398,11 +433,11 @@ int main(void) {
     }
 
     bt_conn_cb_register(&connection_callbacks);
-    event_log_add(EVENT_LOG_BLE_INIT_START, 0);
+    // event_log_add(EVENT_LOG_BLE_INIT_START, 0);
     ble_init();
-    event_log_add(EVENT_LOG_BLE_INIT_DONE, 0);
+    // event_log_add(EVENT_LOG_BLE_INIT_DONE, 0);
     printk("Advertising started. Waiting for connection...\n");
-    event_log_add(EVENT_LOG_ADV_STARTED, 0);
+    // event_log_add(EVENT_LOG_ADV_STARTED, 0);
 
     k_msleep(100);
     k_thread_create(&ble_tx_thread_data, ble_tx_thread_stack,
@@ -412,40 +447,42 @@ int main(void) {
 
     struct sensor_value green;
     struct sensor_value counter;
-    static int low_batt_count = 0;
+    // static int low_batt_count = 0;
     uint32_t battery_mv = 0;
 
-    uint64_t now = k_uptime_get();
+    // moving_average_init(&battery_avg);
+
+    // uint64_t now = k_uptime_get();
     battery_mv = read_battery_mv();
 
     while (1) {
 
-        if (k_uptime_get() - now >= 120000) {
+        // if (k_uptime_get() - now >= 120000) {
 
-            battery_mv = read_battery_mv();
-            event_log_add(EVENT_LOG_LOW_BATT_CHECK, (int16_t)MIN(battery_mv, (uint32_t)INT16_MAX));
+        //     // battery_mv = read_battery_mv();
+        //     // event_log_add(EVENT_LOG_LOW_BATT_CHECK, (int16_t)MIN(battery_mv, (uint32_t)INT16_MAX));
 
-            now = k_uptime_get();
+        //     now = k_uptime_get();
 
-            // send battery via BLE advertisement or notification here if needed
+        //     // send battery via BLE advertisement or notification here if needed
 
-            // ble_send_sensor_data(&battery_packet, sizeof(battery_packet));
+        //     // ble_send_sensor_data(&battery_packet, sizeof(battery_packet));
 
-            if (battery_mv > 0 && battery_mv < 3550) {
-                low_batt_count++;
-            } else {
-                low_batt_count = 0;
-            }
+        //     if (battery_mv > 0 && battery_mv < 3550) {
+        //         low_batt_count++;
+        //     } else {
+        //         low_batt_count = 0;
+        //     }
 
-            // For safety, if battery voltage is critically low, shut down everything immediately
-            if (battery_mv < 3400) {
-                shutdown_everything_low_batt();
-            }
+        //     // For safety, if battery voltage is critically low, shut down everything immediately
+        //     if (battery_mv < 3400) {
+        //         shutdown_everything_low_batt();
+        //     }
 
-            if (low_batt_count >= 3) {
-                shutdown_everything_low_batt();
-            }
-        }
+        //     if (low_batt_count >= 3) {
+        //         shutdown_everything_low_batt();
+        //     }
+        // }
 
         for (size_t i = 0; i < MAX_FETCH_PER_PASS; i++) {
             struct sensor_packet packet;
@@ -467,7 +504,7 @@ int main(void) {
             k_mutex_unlock(&session_lock);
 
             if (err)  {
-                event_log_add(EVENT_LOG_SENSOR_FETCH_ERR, err);
+                // event_log_add(EVENT_LOG_SENSOR_FETCH_ERR, err);
                 break;
             }
 
@@ -475,7 +512,7 @@ int main(void) {
             // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
             packet.ecg = green.val1;
             // packet.resp = red.val1;
-            packet.resp = battery_mv;
+            packet.resp = read_battery_mv(); //battery_mv;
             // packet.ir = ir.val1;
 
             sample_ring_push(&packet);
