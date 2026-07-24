@@ -276,7 +276,7 @@ static void ble_tx_thread(void *arg1, void *arg2, void *arg3)
             sample_ring_consume(batch_count);
         }
 
-        k_msleep(5);
+        k_msleep(15);
     }
 }
 
