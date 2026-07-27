@@ -292,14 +292,16 @@ void max32664c_worker(const struct device *dev)
 
 		err = max32664c_get_hub_status(dev, &status, &i2c_error);
 		if (err) {
-			LOG_ERR("Failed to get hub status! Error: %d", err);
+			LOG_ERR("[%llu ms] Failed to get hub status! Error: %d",
+        		k_uptime_get(), err);
 			k_msleep(2);
 			continue;
 		}
 
 		err = max32664c_get_fifo_count(dev, &fifo);
 		if (err) {
-			LOG_ERR("Failed to get FIFO count! Error: %d", err);
+			LOG_ERR("[%llu ms] Failed to get FIFO count! Error: %d",
+        		k_uptime_get(), err);
 			k_msleep(2);
 			continue;
 		}

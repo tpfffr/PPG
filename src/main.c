@@ -153,6 +153,11 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err) {
     event_log_add(EVENT_LOG_BLE_CONNECTED, err);
     event_log_dump();
 
+    // max32664c_reset_hub(max32664_dev);
+    // max32664c_reset_sample_counter_state();
+    // sample_ring_clear();
+    // err = max32664c_set_mode_raw(max32664_dev);
+
     if (!err && !atomic_get(&session_active)) {
         start_err = measurement_session_start();
     }
@@ -167,8 +172,9 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err) {
 void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
 {
     event_log_add(EVENT_LOG_BLE_DISCONNECTED, reason);
+    volatile uint8_t disconnect_reason = reason;
 
-    measurement_session_stop(true);
+    int err = measurement_session_stop(true);
 
     ARG_UNUSED(conn);
     printk("Application BLE disconnected reason=%u explicit_stop=%ld session_active=%ld\n",
@@ -377,38 +383,38 @@ int measurement_session_stop(bool explicit_stop)
 }
 
 
-void shutdown_everything_low_batt(void)
-{
-    // event_log_add(EVENT_LOG_LOW_BATT_SHUTDOWN, 0);
-    printk("Battery critically low. Shutting down everything...\n");
+// void shutdown_everything_low_batt(void)
+// {
+//     // event_log_add(EVENT_LOG_LOW_BATT_SHUTDOWN, 0);
+//     printk("Battery critically low. Shutting down everything...\n");
 
-    int err = max32664c_disable_sensors(max32664_dev);
-    printk("Disabled sensors with err=%d\n", err);
+//     int err = max32664c_disable_sensors(max32664_dev);
+//     printk("Disabled sensors with err=%d\n", err);
 
-    measurement_session_stop(true);
-    printk("Measurement session stopped.\n");
+//     measurement_session_stop(true);
+//     printk("Measurement session stopped.\n");
 
-    err = max32664c_afe_write_reg(max32664_dev, 0x0D, 0x01);
-    printk("Set AFE shutdown reg 0x0D = 0x01 err=%d\n", err);
-    k_msleep(50);
+//     err = max32664c_afe_write_reg(max32664_dev, 0x0D, 0x01);
+//     printk("Set AFE shutdown reg 0x0D = 0x01 err=%d\n", err);
+//     k_msleep(50);
 
-    // int err = pm_device_action_run(max32664_dev, PM_DEVICE_ACTION_TURN_OFF);
-    // printk("Turn off MAX32664 err=%d\n", err);
-    // k_msleep(50);
+//     // int err = pm_device_action_run(max32664_dev, PM_DEVICE_ACTION_TURN_OFF);
+//     // printk("Turn off MAX32664 err=%d\n", err);
+//     // k_msleep(50);
 
-    uint8_t tx[3] = {0x01, 0x00, 0x01};
-    uint8_t rx;
-    max32664c_i2c_transmit(max32664_dev, tx, sizeof(tx), &rx, 1, 10);
-    k_msleep(50);
+//     uint8_t tx[3] = {0x01, 0x00, 0x01};
+//     uint8_t rx;
+//     max32664c_i2c_transmit(max32664_dev, tx, sizeof(tx), &rx, 1, 10);
+//     k_msleep(50);
 
-    // const struct device *i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c1));
-    // err = pm_device_action_run(i2c_dev, PM_DEVICE_ACTION_SUSPEND);
-    // printk("Suspend I2C device err=%d\n", err);
+//     // const struct device *i2c_dev = DEVICE_DT_GET(DT_NODELABEL(i2c1));
+//     // err = pm_device_action_run(i2c_dev, PM_DEVICE_ACTION_SUSPEND);
+//     // printk("Suspend I2C device err=%d\n", err);
 
-    k_msleep(50);
+//     k_msleep(50);
 
-    sys_poweroff();
-}
+//     sys_poweroff();
+// }
 
 
 /* --- Main Application --- */

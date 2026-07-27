@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach running nRF52840 (no flash, no reset)",
+      "type": "cortex-debug",
+      "request": "attach",
+      "servertype": "jlink",
+      "device": "nRF52840_xxAA",
+      "interface": "swd",
+      "cwd": "${workspaceFolder}",
+      "executable": "${workspaceFolder}/build/PPG/zephyr/zephyr.elf",
+      "runToEntryPoint": "",
+      "preLaunchTask": "",
+      "postAttachCommands": [
+        "monitor halt"
+      ]
+    }
+  ]
+}

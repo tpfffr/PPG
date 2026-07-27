@@ -33,6 +33,19 @@ enum max32664c_output_format {
 	MAX32664C_OUT_ALGO_AND_SENSOR_COUNTER = 0x07,
 };
 
+// enum {
+//     MAX32664C_ERR_STOP_ALGO      = -1001,
+//     MAX32664C_ERR_SET_OUTPUT     = -1002,
+//     MAX32664C_ERR_SET_FIFO_THR   = -1003,
+//     MAX32664C_ERR_ENABLE_AFE     = -1004,
+//     MAX32664C_ERR_SET_SR         = -1005,
+//     MAX32664C_ERR_SET_LED_RANGE  = -1006,
+//     MAX32664C_ERR_SET_ADC_RANGE  = -1007,
+//     MAX32664C_ERR_SET_LED_CURR   = -1008,
+//     MAX32664C_ERR_SET_LED_SEQ    = -1009,
+//     MAX32664C_ERR_ALLOC_QUEUE    = -1010,
+// };
+
 
 /** @brief Skin contact detection states.
  *  @note The SCD states are only available when the SCD only mode is enabled.
@@ -44,6 +57,7 @@ enum max32664c_scd_states {
 	MAX32664C_SCD_STATE_ON_SKIN,
 };
 void max32664c_reset_sample_counter_state(void);
+int max32664c_reset_hub(const struct device *dev);
 
 /** @brief LED current structure.
  */

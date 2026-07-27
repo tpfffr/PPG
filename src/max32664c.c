@@ -256,6 +256,8 @@ int max32664c_set_mode_raw(const struct device *dev)
 		return -EINVAL;
 	}
 
+	k_msleep(50);
+
 	LOG_INF("Entering RAW mode...");
 	/* Set the output format to sensor data only */
 	printk("-> RAW Mode Check 2: Setting output format...\n");
@@ -263,7 +265,9 @@ int max32664c_set_mode_raw(const struct device *dev)
 	tx[1] = 0x00;
 	// counter
 	tx[2] = MAX32664C_OUT_SENSOR_COUNTER;
-	if (max32664c_i2c_transmit(dev, tx, 3, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY)) {
+	int err = max32664c_i2c_transmit(dev, tx, 3, &rx, 1, MAX32664C_DEFAULT_CMD_DELAY);
+	if (err) {
+		LOG_ERR("Failed to set output format!");
 		return -EINVAL;
 	}
 
@@ -1100,6 +1104,37 @@ static DEVICE_API(sensor, max32664c_driver_api) = {
 	.sample_fetch = max32664c_sample_fetch,
 	.channel_get = max32664c_channel_get,
 };
+
+int max32664c_reset_hub(const struct device *dev)
+{
+    const struct max32664c_config *config = dev->config;
+    struct max32664c_data *data = dev->data;
+
+    k_mutex_lock(&max32664c_bus_lock, K_FOREVER);
+
+    gpio_pin_configure_dt(&config->reset_gpio, GPIO_OUTPUT);
+    gpio_pin_configure_dt(&config->mfio_gpio, GPIO_OUTPUT);
+
+    /* Force a known idle/software state before the hardware reset. */
+    data->op_mode = MAX32664C_OP_MODE_IDLE;
+
+    /* Put the hub back into application mode. */
+    gpio_pin_set_dt(&config->reset_gpio, false);
+    k_msleep(30);
+
+    gpio_pin_set_dt(&config->mfio_gpio, true);
+    k_msleep(30);
+
+    gpio_pin_set_dt(&config->reset_gpio, true);
+    k_msleep(1700);
+
+    /* Leave MFIO released/high after reset. */
+    gpio_pin_set_dt(&config->mfio_gpio, true);
+
+    k_mutex_unlock(&max32664c_bus_lock);
+
+    return 0;
+}
 
 int max32664c_init(const struct device *dev)
 {
