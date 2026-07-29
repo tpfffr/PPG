@@ -153,10 +153,11 @@ void on_ble_connect(struct bt_conn *conn, uint8_t err) {
     event_log_add(EVENT_LOG_BLE_CONNECTED, err);
     event_log_dump();
 
-    // max32664c_reset_hub(max32664_dev);
-    // max32664c_reset_sample_counter_state();
+    max32664c_reset_hub(max32664_dev);
+    max32664c_reset_sample_counter_state();
     // sample_ring_clear();
-    // err = max32664c_set_mode_raw(max32664_dev);
+    k_msleep(20);
+    err = max32664c_set_mode_raw(max32664_dev);
 
     if (!err && !atomic_get(&session_active)) {
         start_err = measurement_session_start();
@@ -175,6 +176,10 @@ void on_ble_disconnect(struct bt_conn *conn, uint8_t reason)
     volatile uint8_t disconnect_reason = reason;
 
     int err = measurement_session_stop(true);
+
+    if (err) {
+        printk("Failed to stop session on BLE disconnect err=%d\n", err);
+    }
 
     ARG_UNUSED(conn);
     printk("Application BLE disconnected reason=%u explicit_stop=%ld session_active=%ld\n",
@@ -278,6 +283,10 @@ static void ble_tx_thread(void *arg1, void *arg2, void *arg3)
             err = ble_send_sensor_data(notify_batch,
                                        batch_count * sizeof(notify_batch[0]));
 
+            if (err) {
+                printk("BLE send failed with err=%d\n", err);
+                break;
+            }
 
             sample_ring_consume(batch_count);
         }
@@ -374,7 +383,7 @@ int measurement_session_stop(bool explicit_stop)
     atomic_set(&session_active, 0);
 
     err = sensor_stream_stop_locked();
-    sample_ring_clear();
+    // sample_ring_clear();
     event_log_add(EVENT_LOG_SESSION_STOP, err);
 
     k_mutex_unlock(&session_lock);
