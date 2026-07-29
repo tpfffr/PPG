@@ -27,7 +27,7 @@
 #define MAX32664_MFIO_PIN  3   // Pin 0.3  (Multi-Function IO)
 #define PACKET_LEN 20
 #define SENSOR_RING_CAPACITY 2000
-#define MAX_FETCH_PER_PASS 10
+#define MAX_FETCH_PER_PASS 1
 #define MAX_NOTIFY_BATCHES_PER_PASS 1
 #define BACKLOG_NOTIFY_BOOST_THRESHOLD 50
 #define MAX_NOTIFY_BATCHES_PER_PASS_BOOSTED 2
@@ -518,22 +518,28 @@ int main(void) {
             }
             k_mutex_unlock(&session_lock);
 
-            if (err)  {
-                // event_log_add(EVENT_LOG_SENSOR_FETCH_ERR, err);
-                break;
-            }
+            // if (err)  {
+            //     // event_log_add(EVENT_LOG_SENSOR_FETCH_ERR, err);
+            //     break;
+            // }
 
-            packet.timestamp = (uint32_t)counter.val1;
-            // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
-            packet.ecg = green.val1;
-            // packet.resp = red.val1;
-            packet.resp = read_battery_mv(); //battery_mv;
-            // packet.ir = ir.val1;
+            if (!err) {
+                packet.timestamp = (uint32_t)counter.val1;
+                // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+                packet.ecg = green.val1;
+                packet.resp = read_battery_mv(); //battery_mv;
+            }
+            else {
+                packet.timestamp = 999999U;
+                // packet.timestamp = (uint32_t)(k_uptime_get() - session_start_ms);
+                packet.ecg = 999999U;
+                packet.resp = read_battery_mv(); //battery_mv;
+            }
 
             sample_ring_push(&packet);
 
         }
-        k_msleep(20);
+        k_msleep(21);
     }
 
     return 0;
